@@ -1,0 +1,42 @@
+eas.json
+src/constants/config.js
+
+
+npx expo start --clear
+
+
+Build Version Changes :
+app.json
+android/app/build.gradle
+
+eas build -p android
+eas build --platform android --profile production
+
+For updates
+eas build --platform android --profile production
+eas update --branch production --message "fix: SOR GPS tracking"
+
+
+changes to do in
+
+app.config.js :
+
+version: "1.1.2", 
+versionCode: 17,
+runtimeVersion: "1.1.2",
+
+eas.json :
+
+"env": {
+        "API_URL": "https://your-url.com"
+      }
+
+src/constants/config.js : 
+
+EXPO_PUBLIC_API_BASE_URL=https://your-url.com
+
+
+android/app/build.gradle :
+
+versionCode 17
+versionName "1.1.2"
