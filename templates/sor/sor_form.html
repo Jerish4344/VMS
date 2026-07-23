@@ -1,0 +1,162 @@
+{% extends 'base.html' %}
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
+<style>
+  /* Make Select2 match the form-select-sm height used elsewhere */
+  .select2-container--bootstrap-5 .select2-selection { min-height: calc(1.5em + 0.5rem + 2px); padding: 0.25rem 0.5rem; font-size: 0.875rem; }
+  .select2-container { width: 100% !important; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="row justify-content-center">
+    <div class="col-lg-7 col-md-9">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-white border-0 pb-0 d-flex align-items-center">
+          <i class="fas fa-clipboard-list fa-lg me-2 text-primary"></i>
+          {% if view_only %}
+            <h4 class="mb-0">View SOR Entry</h4>
+          {% elif edit_mode %}
+            <h4 class="mb-0">Edit SOR Entry</h4>
+          {% else %}
+            <h4 class="mb-0">Create SOR Entry / Outsourced Vehicle</h4>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          <form method="post" autocomplete="off">
+            {% csrf_token %}
+            {% if form %}
+              {% for field in form %}
+                <div class="mb-3" id="field-wrapper-{{ field.name }}">
+                  <label for="{{ field.id_for_label }}" class="form-label fw-semibold">{{ field.label }}{% if field.field.required %}<span class="text-danger ms-1">*</span>{% endif %}</label>
+                  {% if view_only %}
+                    <div class="form-control-plaintext">{{ field.value }}</div>
+                  {% elif field.name == 'from_location' %}
+                    {{ field }}
+                    <input type="text" name="from_location_other" id="from_location_other" class="form-control mt-2" style="display:none;" placeholder="Enter other location">
+                  {% elif field.name == 'to_location' %}
+                    {{ field }}
+                    <input type="text" name="to_location_other" id="to_location_other" class="form-control mt-2" style="display:none;" placeholder="Enter other location">
+                  {% else %}
+                    {{ field }}
+                  {% endif %}
+                  {% if field.help_text %}
+                    <div class="form-text">{{ field.help_text }}</div>
+                  {% endif %}
+                  {% for error in field.errors %}
+                    <div class="text-danger small">{{ error }}</div>
+                  {% endfor %}
+                </div>
+              {% endfor %}
+            {% elif sor %}
+              <!-- For view mode with no form, show SOR fields -->
+              <div class="mb-3"><strong>Type:</strong> {{ sor.get_source_type_display }}</div>
+              <div class="mb-3"><strong>Goods Value:</strong> {{ sor.goods_value }}</div>
+              <div class="mb-3"><strong>From:</strong> {{ sor.from_location }}</div>
+              <div class="mb-3"><strong>To:</strong> {{ sor.to_location }}</div>
+              <div class="mb-3"><strong>Vehicle:</strong> {% if sor.vehicle %}{{ sor.vehicle }}{% else %}{{ sor.outsourced_vehicle_text|default:'--' }}{% endif %}</div>
+              <div class="mb-3"><strong>Driver:</strong> {% if sor.driver %}{{ sor.driver }}{% else %}{{ sor.outsourced_driver_text|default:'--' }}{% endif %}</div>
+              <div class="mb-3"><strong>Vendor:</strong> {{ sor.vendor_name|default:'--' }}</div>
+              <div class="mb-3"><strong>Rate per KM:</strong> {{ sor.outsourced_rate_per_km|default:'--' }}</div>
+              <div class="mb-3"><strong>Start Odometer:</strong> {{ sor.start_odometer|default:'--' }}</div>
+              <div class="mb-3"><strong>End Odometer:</strong> {{ sor.end_odometer|default:'--' }}</div>
+              <div class="mb-3"><strong>Status:</strong> {{ sor.get_status_display }}</div>
+              <!-- Add more fields as needed -->
+            {% endif %}
+<script>
+  function toggleSourceTypeFields() {
+    const sourceSelect = document.getElementById('id_source_type');
+    if (!sourceSelect) {
+      return;
+    }
+
+    const isOutsourced = sourceSelect.value === 'outsourced_manual';
+
+    const companyFields = ['vehicle', 'driver'];
+    const outsourcedFields = ['outsourced_vehicle_text', 'outsourced_driver_text', 'vendor_name', 'start_odometer', 'end_odometer', 'outsourced_rate_per_km'];
+
+    companyFields.forEach(name => {
+      const wrapper = document.getElementById('field-wrapper-' + name);
+      if (wrapper) {
+        wrapper.style.display = isOutsourced ? 'none' : 'block';
+      }
+    });
+
+    outsourcedFields.forEach(name => {
+      const wrapper = document.getElementById('field-wrapper-' + name);
+      if (wrapper) {
+        wrapper.style.display = isOutsourced ? 'block' : 'none';
+      }
+    });
+  }
+
+  function toggleOtherInput(selectId, inputId) {
+    const select = document.getElementById(selectId);
+    const input = document.getElementById(inputId);
+    if (select && input) {
+      select.addEventListener('change', function() {
+        if (this.value === 'Others') {
+          input.style.display = 'block';
+        } else {
+          input.style.display = 'none';
+          input.value = '';
+        }
+      });
+      // On page load
+      if (select.value === 'Others') {
+        input.style.display = 'block';
+      }
+    }
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    toggleOtherInput('id_from_location', 'from_location_other');
+    toggleOtherInput('id_to_location', 'to_location_other');
+    toggleSourceTypeFields();
+
+    const sourceSelect = document.getElementById('id_source_type');
+    if (sourceSelect) {
+      sourceSelect.addEventListener('change', toggleSourceTypeFields);
+    }
+  });
+</script>
+            {% if not view_only %}
+            <div class="d-flex justify-content-end">
+              <button type="submit" class="btn btn-primary px-4">
+                {% if edit_mode %}
+                  <i class="fas fa-save me-2"></i> Save
+                {% else %}
+                  <i class="fas fa-plus-circle me-2"></i> Create
+                {% endif %}
+              </button>
+              <a href="{% url 'sor_list' %}" class="btn btn-outline-secondary ms-2">
+                <i class="fas fa-arrow-left me-1"></i> Cancel
+              </a>
+            </div>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js" defer></script>
+<script defer>
+  document.addEventListener('DOMContentLoaded', function() {
+    if (typeof window.jQuery === 'undefined' || typeof window.jQuery.fn.select2 === 'undefined') return;
+    var $ = window.jQuery;
+    ['#id_vehicle', '#id_driver', '#id_from_location', '#id_to_location'].forEach(function(sel) {
+      var $el = $(sel);
+      if (!$el.length) return;
+      $el.select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        placeholder: 'Search...',
+        allowClear: false,
+      });
+    });
+  });
+</script>
+{% endblock %}

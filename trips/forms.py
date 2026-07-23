@@ -1,0 +1,229 @@
+from django import forms
+from django.utils import timezone
+from .models import Trip
+from .consultant_models import ConsultantRate
+from vehicles.models import Vehicle
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class TripForm(forms.ModelForm):
+    class Meta:
+        model = Trip
+        fields = [
+            'vehicle', 'origin', 'start_odometer', 'purpose', 'notes'
+        ]
+        widgets = {
+            'origin': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter starting location'}),
+            'start_odometer': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'purpose': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., Client Visit, Delivery'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Additional notes (optional)'}),
+            'vehicle': forms.Select(attrs={'class': 'form-select'}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+        
+        # Set up vehicle choices based on user type
+        if user:
+            if user.user_type == 'personal_vehicle_staff':
+                # Personal vehicle staff only see their own vehicles
+                self.fields['vehicle'].queryset = Vehicle.objects.filter(
+                    ownership_type='personal',
+                    owned_by=user,
+                    status='available'
+                )
+            else:
+                # Check if driver has active consultant rate assignments
+                consultant_vehicle_ids = list(ConsultantRate.objects.filter(
+                    driver=user, status='active'
+                ).values_list('vehicle_id', flat=True))
+                if consultant_vehicle_ids:
+                    # Consultant drivers see their assigned vehicles (exclude only retired)
+                    self.fields['vehicle'].queryset = Vehicle.objects.filter(
+                        id__in=consultant_vehicle_ids
+                    ).exclude(status='retired')
+                else:
+                    # Other users see available company vehicles
+                    self.fields['vehicle'].queryset = Vehicle.objects.filter(
+                        ownership_type='company',
+                        status='available'
+                    )
+        else:
+            # Fallback: only show available vehicles
+            self.fields['vehicle'].queryset = Vehicle.objects.filter(status='available')
+        
+        self.fields['vehicle'].empty_label = "Choose a vehicle..."
+        
+        # Make notes optional
+        self.fields['notes'].required = False
+    
+    def clean_start_odometer(self):
+        """Validate start odometer is not less than vehicle's current odometer."""
+        start_odometer = self.cleaned_data.get('start_odometer')
+        vehicle = self.cleaned_data.get('vehicle')
+        
+        if vehicle and vehicle.current_odometer and start_odometer < vehicle.current_odometer:
+            raise forms.ValidationError(
+                f"Start odometer cannot be less than vehicle's current odometer ({vehicle.current_odometer} km)."
+            )
+        
+        return start_odometer
+    
+    def clean_origin(self):
+        """Validate origin field."""
+        origin = self.cleaned_data.get('origin')
+        if not origin or len(origin.strip()) < 3:
+            raise forms.ValidationError("Please provide a valid starting location (minimum 3 characters).")
+        return origin.strip()
+
+class EndTripForm(forms.ModelForm):
+    """Form for ending a trip."""
+
+    # Corrected start odometer – surfaced in the ODO verification modal only.
+    # Not rendered in the main form body; the template uses a hidden input.
+    start_odometer = forms.IntegerField(
+        min_value=0,
+        required=True,
+        widget=forms.HiddenInput(attrs={'id': 'id_start_odometer'}),
+        help_text="Verify or correct the odometer reading at trip start",
+    )
+    
+    class Meta:
+        model = Trip
+        fields = ['destination', 'end_odometer', 'notes', 'passenger_count']
+        widgets = {
+            'destination': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Enter where your trip ended'
+            }),
+            'end_odometer': forms.NumberInput(attrs={
+                'min': 0,
+                'class': 'form-control'
+            }),
+            'notes': forms.Textarea(attrs={
+                'rows': 3, 
+                'placeholder': 'Additional trip details or final remarks...',
+                'class': 'form-control'
+            }),
+            'passenger_count': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0',
+                'placeholder': 'Enter number of passengers'
+            }),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Add custom help text
+        self.fields['end_odometer'].help_text = "Current odometer reading in kilometers"
+        self.fields['destination'].help_text = "Enter your final destination"
+
+        # Pre-fill start_odometer with current trip value so it round-trips
+        # unchanged when the driver confirms without editing it.
+        if self.instance and self.instance.pk:
+            self.fields['start_odometer'].initial = self.instance.start_odometer
+        
+        # Set minimum value for end_odometer
+        if self.instance and self.instance.start_odometer:
+            self.fields['end_odometer'].widget.attrs['min'] = self.instance.start_odometer
+
+        # Show passenger_count only for Commercial Staff Bus
+        if self.instance and self.instance.is_commercial_staff_bus:
+            self.fields['passenger_count'].required = False
+            self.fields['passenger_count'].help_text = "Number of passengers on this staff bus"
+        else:
+            # Hide passenger_count for non-staff-bus vehicles
+            del self.fields['passenger_count']
+    
+    def clean(self):
+        """Cross-field validation: end odometer must exceed (corrected) start odometer."""
+        cleaned = super().clean()
+        end_odometer = cleaned.get('end_odometer')
+        # Use the driver-verified start odometer if provided, else the stored value.
+        start_odometer = cleaned.get('start_odometer') or (
+            self.instance.start_odometer if self.instance else None
+        )
+
+        if end_odometer is not None and start_odometer is not None:
+            if end_odometer <= start_odometer:
+                raise forms.ValidationError(
+                    f"End odometer ({end_odometer} km) must be greater than "
+                    f"start odometer ({start_odometer} km)."
+                )
+        return cleaned
+    
+    def clean_destination(self):
+        """Validate destination field."""
+        destination = self.cleaned_data.get('destination')
+        if not destination or len(destination.strip()) < 3:
+            raise forms.ValidationError("Please provide a valid destination (minimum 3 characters).")
+        return destination.strip()
+
+class PassengerCountForm(forms.ModelForm):
+    """Form for updating passenger count during an active trip (Commercial Staff Bus only)."""
+    
+    class Meta:
+        model = Trip
+        fields = ['passenger_count']
+        widgets = {
+            'passenger_count': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0',
+                'placeholder': 'Enter number of passengers'
+            }),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['passenger_count'].required = False
+        self.fields['passenger_count'].label = "Passenger Count"
+
+
+class ManualTripForm(forms.ModelForm):
+    """Form for manually creating trips by managers."""
+    
+    class Meta:
+        model = Trip
+        fields = [
+            'vehicle', 'driver', 'origin', 'destination', 
+            'start_time', 'end_time', 'start_odometer', 
+            'end_odometer', 'purpose', 'notes'
+        ]
+        widgets = {
+            'start_time': forms.DateTimeInput(
+                attrs={'type': 'datetime-local', 'class': 'form-control'}
+            ),
+            'end_time': forms.DateTimeInput(
+                attrs={'type': 'datetime-local', 'class': 'form-control'}
+            ),
+            'origin': forms.TextInput(attrs={'class': 'form-control'}),
+            'destination': forms.TextInput(attrs={'class': 'form-control'}),
+            'start_odometer': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'end_odometer': forms.NumberInput(attrs={'class': 'form-control', 'min': '0'}),
+            'purpose': forms.TextInput(attrs={'class': 'form-control'}),
+            'notes': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+            'driver': forms.Select(attrs={'class': 'form-select'}),
+            'vehicle': forms.Select(attrs={'class': 'form-select'}),
+        }
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Set up driver choices
+        from accounts.models import CustomUser
+        self.fields['driver'].queryset = CustomUser.objects.filter(user_type='driver')
+        
+        # Set up vehicle choices
+        self.fields['vehicle'].queryset = Vehicle.objects.all()
+        
+        # Make end_time and end_odometer not required for manual forms
+        self.fields['end_time'].required = False
+        self.fields['end_odometer'].required = False
+        self.fields['notes'].required = False
+        
+        # Add empty choice for dropdowns
+        self.fields['driver'].empty_label = "Select a driver..."
+        self.fields['vehicle'].empty_label = "Select a vehicle..."

@@ -1,0 +1,577 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Staff Personal Dashboard - Vehicle Management System{% endblock %}
+
+{% block extra_css %}
+<link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<!-- Leaflet CSS and JS for maps -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  .stats-card {
+    transition: all 0.3s ease;
+    border-left: 4px solid #4e73df;
+  }
+  
+  .stats-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+  }
+  
+  .stats-icon {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(78, 115, 223, 0.1);
+    border-radius: 50%;
+    color: #4e73df;
+  }
+  
+  .stats-icon i {
+    font-size: 1.8rem;
+  }
+  
+  .stats-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1rem;
+    font-weight: 700;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+  }
+  
+  .stats-number {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #5a5c69;
+    margin-bottom: 0;
+  }
+  
+  .welcome-card {
+    background-color: #f8f9fc;
+    border-radius: 0.35rem;
+    padding: 1.5rem;
+    border-left: 4px solid #4e73df;
+  }
+  
+  .active-trip-card {
+    border: 1px solid #e3e6f0;
+    border-radius: 0.35rem;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    background-color: #fff;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="dashboard-container">
+    <div class="row">
+      <div class="col-lg-12">
+        <div class="welcome-card mb-4">
+          <h1>Welcome, {{ request.user.get_full_name }}</h1>
+          <p>Personal Vehicle Staff Dashboard</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row">
+      <div class="col-lg-3 col-md-6">
+        <div class="card stats-card mb-4">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h6 class="stats-title">Total Personal Vehicles</h6>
+                <h3 class="stats-number">{{ total_personal_vehicles }}</h3>
+              </div>
+              <div class="stats-icon">
+                <i class="fas fa-car"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-lg-3 col-md-6">
+        <div class="card stats-card mb-4">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h6 class="stats-title">Active Personal Trips</h6>
+                <h3 class="stats-number">{{ active_personal_trips }}</h3>
+              </div>
+              <div class="stats-icon">
+                <i class="fas fa-route"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-lg-3 col-md-6">
+        <div class="card stats-card mb-4">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h6 class="stats-title">Monthly Distance</h6>
+                <h3 class="stats-number">{{ monthly_personal_distance }} km</h3>
+              </div>
+              <div class="stats-icon">
+                <i class="fas fa-tachometer-alt"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-lg-3 col-md-6">
+        <div class="card stats-card mb-4">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <h6 class="stats-title">Monthly Trips</h6>
+                <h3 class="stats-number">{{ monthly_personal_trips }}</h3>
+              </div>
+              <div class="stats-icon">
+                <i class="fas fa-map-marked-alt"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ongoing Trips Section -->
+    <div class="row">
+      <div class="col-lg-12">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h5 class="card-title">
+              <i class="fas fa-route me-2"></i>Ongoing Personal Vehicle Trips
+            </h5>
+          </div>
+          <div class="card-body">
+            {% if ongoing_personal_trips %}
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Vehicle</th>
+                      <th>Owner</th>
+                      <th>Driver</th>
+                      <th>From</th>
+                      <th>To</th>
+                      <th>Start Time</th>
+                      <th>Duration</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for trip in ongoing_personal_trips %}
+                    <tr>
+                      <td>
+                        <strong>{{ trip.vehicle.license_plate }}</strong><br>
+                        <small class="text-muted">{{ trip.vehicle.vehicle_type.name }}</small>
+                      </td>
+                      <td>
+                        {% if trip.vehicle.owned_by %}
+                          <span class="badge bg-purple text-white">{{ trip.vehicle.owned_by.get_full_name }}</span>
+                        {% else %}
+                          <span class="text-muted">Not specified</span>
+                        {% endif %}
+                      </td>
+                      <td>{{ trip.driver.get_full_name }}</td>
+                      <td>{{ trip.from_location }}</td>
+                      <td>{{ trip.to_location }}</td>
+                      <td>{{ trip.start_time|date:"M d, Y H:i" }}</td>
+                      <td>
+                        {% if trip.start_time %}
+                          <span class="badge bg-info">{{ trip.start_time|timesince }}</span>
+                        {% else %}
+                          <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        <div class="btn-group btn-group-sm">
+                          <button class="btn btn-outline-primary view-location" data-trip-id="{{ trip.id }}" title="View Location">
+                            <i class="fas fa-map-marker-alt"></i>
+                          </button>
+                          <a href="{% url 'track_trip' trip.id %}" class="btn btn-outline-success" title="Live Tracking">
+                            <i class="fas fa-satellite-dish"></i>
+                          </a>
+                          <a href="{% url 'trip_detail' trip.id %}" class="btn btn-outline-info" title="Trip Details">
+                            <i class="fas fa-info-circle"></i>
+                          </a>
+                        </div>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="text-center py-5">
+                <i class="fas fa-route fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Ongoing Personal Vehicle Trips</h5>
+                <p class="text-muted">All personal vehicles are currently available.</p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vehicle Status Chart -->
+    <div class="row">
+      <div class="col-lg-6">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h5 class="card-title">Personal Vehicle Status</h5>
+          </div>
+          <div class="card-body">
+            <canvas id="personalVehicleStatusChart" height="180"></canvas>
+          </div>
+        </div>
+      </div>
+      
+      <div class="col-lg-6">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h5 class="card-title">Monthly Reimbursement Summary</h5>
+          </div>
+          <div class="card-body">
+            <div class="text-center">
+              <h3 class="text-success">₹{{ total_reimbursement|floatformat:2 }}</h3>
+              <p class="text-muted">Total monthly reimbursement for personal vehicle usage</p>
+              <div class="mt-3">
+                <p><strong>Total Distance:</strong> {{ monthly_personal_distance }} km</p>
+                <p><strong>Trips Count:</strong> {{ monthly_personal_trips }}</p>
+                {% if reimbursement_by_staff %}
+                  <small class="text-muted">Rates vary by vehicle</small>
+                {% else %}
+                  <small class="text-muted">No reimbursement data for this month</small>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Personal Vehicle Trips -->
+    <div class="row">
+      <div class="col-lg-12">
+        <div class="card mb-4">
+          <div class="card-header">
+            <h5 class="card-title">Recent Personal Vehicle Trips</h5>
+          </div>
+          <div class="card-body">
+            {% if recent_personal_trips %}
+              <div class="table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Vehicle</th>
+                      <th>Owner</th>
+                      <th>Driver</th>
+                      <th>Date</th>
+                      <th>Distance</th>
+                      <th>Duration</th>
+                      <th>Reimbursement</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for trip in recent_personal_trips %}
+                    <tr>
+                      <td>
+                        <strong>{{ trip.vehicle.license_plate }}</strong><br>
+                        <small class="text-muted">{{ trip.vehicle.vehicle_type.name }}</small>
+                      </td>
+                      <td>
+                        {% if trip.vehicle.owned_by %}
+                          <span class="badge bg-purple text-white">{{ trip.vehicle.owned_by.get_full_name }}</span>
+                        {% else %}
+                          <span class="text-muted">Not specified</span>
+                        {% endif %}
+                      </td>
+                      <td>{{ trip.driver.get_full_name }}</td>
+                      <td>{{ trip.start_time|date:"M d, Y" }}</td>
+                      <td>{{ trip.distance }} km</td>
+                      <td>
+                        {% if trip.duration %}
+                          {{ trip.duration }}
+                        {% else %}
+                          <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                      <td>
+                        {% if trip.reimbursement_amount %}
+                          <span class="text-success">₹{{ trip.reimbursement_amount|floatformat:2 }}</span>
+                        {% elif trip.distance %}
+                          <span class="text-muted">Rate not set</span>
+                        {% else %}
+                          <span class="text-muted">-</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% else %}
+              <div class="text-center py-5">
+                <i class="fas fa-history fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Recent Personal Vehicle Trips</h5>
+                <p class="text-muted">Personal vehicle trip history will appear here.</p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Location Map Modal -->
+<div class="modal fade" id="locationMapModal" tabindex="-1" aria-labelledby="locationMapModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="locationMapModalLabel">Vehicle Location</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="locationMap" style="height: 400px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Chart colors
+  const chartColors = {
+    blue: 'rgba(54, 162, 235, 0.7)',
+    green: 'rgba(75, 192, 192, 0.7)',
+    red: 'rgba(255, 99, 132, 0.7)',
+    yellow: 'rgba(255, 206, 86, 0.7)',
+    purple: 'rgba(153, 102, 255, 0.7)',
+    orange: 'rgba(255, 159, 64, 0.7)'
+  };
+
+  // Personal Vehicle Status Chart
+  try {
+    const ctx = document.getElementById('personalVehicleStatusChart');
+    if (ctx) {
+      const chartCtx = ctx.getContext('2d');
+      const statusData = {
+        labels: [{% for item in personal_vehicle_status %}'{{ item.status|capfirst }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+        datasets: [{
+          data: [{% for item in personal_vehicle_status %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+          backgroundColor: [
+            chartColors.green,
+            chartColors.blue,
+            chartColors.orange,
+            chartColors.red
+          ],
+          borderWidth: 1
+        }]
+      };
+      
+      new Chart(chartCtx, {
+        type: 'doughnut',
+        data: statusData,
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                boxWidth: 12,
+                font: {
+                  size: 11
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Error creating personal vehicle status chart:', e);
+  }
+
+  // Location Map Functionality - Using Leaflet
+  let map = null;
+  let currentMarkers = [];
+  let currentPolyline = null;
+  const viewLocationButtons = document.querySelectorAll('.view-location');
+  const locationMapModal = document.getElementById('locationMapModal');
+  
+  // Clear all markers and polylines from the map
+  function clearMapElements() {
+    if (!map) return;
+    
+    currentMarkers.forEach(marker => {
+      map.removeLayer(marker);
+    });
+    currentMarkers = [];
+    
+    if (currentPolyline) {
+      map.removeLayer(currentPolyline);
+      currentPolyline = null;
+    }
+  }
+  
+  if (viewLocationButtons.length > 0 && locationMapModal) {
+    viewLocationButtons.forEach(button => {
+      button.addEventListener('click', async function() {
+        const tripId = this.dataset.tripId;
+        
+        try {
+          const mapElement = document.getElementById('locationMap');
+          mapElement.innerHTML = '';
+          
+          if (!map) {
+            map = L.map('locationMap').setView([0, 0], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+              maxZoom: 19
+            }).addTo(map);
+          }
+          
+          mapElement.style.opacity = '0.5';
+          
+          const response = await fetch(`/trips/api/gps/locations/${tripId}/`);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          clearMapElements();
+          
+          if (data.length > 0) {
+            const latestLocation = data[data.length - 1];
+            const position = [latestLocation.latitude, latestLocation.longitude];
+            
+            map.setView(position, 13);
+            
+            const redIcon = L.divIcon({
+              className: 'custom-marker',
+              html: '<div style="background-color: #dc3545; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>',
+              iconSize: [15, 15],
+              iconAnchor: [7, 7]
+            });
+            
+            const latestMarker = L.marker(position, { icon: redIcon }).addTo(map);
+            latestMarker.bindPopup(`
+              <div>
+                <strong>Latest Location</strong><br>
+                Time: ${new Date(latestLocation.timestamp).toLocaleString()}<br>
+                ${latestLocation.speed ? `Speed: ${(latestLocation.speed * 3.6).toFixed(1)} km/h` : ''}
+              </div>
+            `).openPopup();
+            currentMarkers.push(latestMarker);
+            
+            if (data.length > 1) {
+              const startLocation = data[0];
+              const startPosition = [startLocation.latitude, startLocation.longitude];
+              
+              const greenIcon = L.divIcon({
+                className: 'custom-marker',
+                html: '<div style="background-color: #28a745; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>',
+                iconSize: [15, 15],
+                iconAnchor: [7, 7]
+              });
+              
+              const startMarker = L.marker(startPosition, { icon: greenIcon }).addTo(map);
+              startMarker.bindPopup(`
+                <div>
+                  <strong>Trip Start</strong><br>
+                  Time: ${new Date(startLocation.timestamp).toLocaleString()}
+                </div>
+              `);
+              currentMarkers.push(startMarker);
+            }
+            
+            const tripPath = data.map(log => [log.latitude, log.longitude]);
+            
+            currentPolyline = L.polyline(tripPath, {
+              color: '#2563EB',
+              weight: 3,
+              opacity: 1
+            }).addTo(map);
+            
+            if (tripPath.length > 1) {
+              map.fitBounds(currentPolyline.getBounds(), { padding: [50, 50] });
+            }
+            
+          } else {
+            map.setView([0, 0], 2);
+            
+            L.popup()
+              .setLatLng([0, 0])
+              .setContent('<div style="color: #dc3545;"><strong>No location data available for this trip.</strong></div>')
+              .openOn(map);
+          }
+          
+          mapElement.style.opacity = '1';
+          
+        } catch (error) {
+          console.error('Error loading map:', error);
+          
+          const mapElement = document.getElementById('locationMap');
+          if (mapElement) {
+            mapElement.style.opacity = '1';
+            mapElement.innerHTML = `
+              <div style="display: flex; align-items: center; justify-content: center; height: 100%; background-color: #f8f9fa; color: #dc3545; text-align: center; padding: 20px;">
+                <div>
+                  <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
+                  <strong>Map Loading Error</strong><br>
+                  <small>${error.message}</small>
+                </div>
+              </div>
+            `;
+          }
+        }
+        
+        const modal = new bootstrap.Modal(locationMapModal);
+        modal.show();
+      });
+    });
+    
+    if (locationMapModal) {
+      locationMapModal.addEventListener('shown.bs.modal', function() {
+        if (map) {
+          setTimeout(() => {
+            map.invalidateSize();
+            if (currentPolyline) {
+              map.fitBounds(currentPolyline.getBounds(), { padding: [50, 50] });
+            }
+          }, 100);
+        }
+      });
+      
+      locationMapModal.addEventListener('hidden.bs.modal', function() {
+        if (map) {
+          map.remove();
+          map = null;
+        }
+      });
+    }
+  }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,42 @@
+env/
+*.pyc
+__pycache__/
+*.sqlite3
+*.log
+*.sql
+*.save
+.env
+logs/
+
+# Static files
+staticfiles/
+
+# Media files
+media/
+
+## Python
+#__pycache__/
+#*.pyc
+
+## Virtual Environment
+#env/
+#ENV/
+#.venv/
+#venv/
+
+## Django specific
+#*.sqlite3
+#*.log
+#*.pot
+#*.py[cod]
+#*.migrations/
+#*.db
+
+## System files
+#.DS_Store
+#*.swp
+#.idea/
+#.vscode/
+
+## Git files
+#*.save

@@ -1,0 +1,1393 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Start Trip - Vehicle Management System{% endblock %}
+
+{% block extra_css %}
+<style>
+  .vehicle-card {
+    margin-bottom: 1.5rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  
+  .vehicle-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15) !important;
+  }
+  
+  #vehiclePreview {
+    transition: all 0.3s ease;
+  }
+  
+  #vehiclePreview.show {
+    transform: scale(1.02);
+  }
+  
+  .form-step {
+    display: none;
+  }
+  
+  .form-step.active {
+    display: block;
+  }
+  
+  .step-indicator {
+    display: flex;
+    margin-bottom: 2rem;
+  }
+  
+  .step {
+    flex: 1;
+    padding: 0.5rem;
+    text-align: center;
+    background-color: #f8f9fc;
+    border: 1px solid #e3e6f0;
+    font-weight: 600;
+  }
+  
+  .step.active {
+    background-color: #4e73df;
+    color: white;
+    border-color: #4e73df;
+  }
+  
+  .step.completed {
+    background-color: #1cc88a;
+    color: white;
+    border-color: #1cc88a;
+  }
+  
+  .license-expired-alert {
+    font-size: 0.875rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .route-preview {
+    background-color: #f8f9fc;
+    border: 1px solid #e3e6f0;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    margin-top: 1rem;
+    display: none;
+  }
+
+  .route-preview.show {
+    display: block;
+  }
+
+  .route-arrow {
+    color: #4e73df;
+    font-weight: bold;
+    margin: 0 0.5rem;
+  }
+
+  .location-suggestions {
+    position: absolute;
+    z-index: 1000;
+    background: white;
+    border: 1px solid #e3e6f0;
+    border-radius: 0.25rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    max-height: 200px;
+    overflow-y: auto;
+    width: 100%;
+    display: none;
+  }
+
+  .location-suggestion {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    border-bottom: 1px solid #f1f1f1;
+  }
+
+  .location-suggestion:hover {
+    background-color: #f8f9fc;
+  }
+
+  .location-suggestion:last-child {
+    border-bottom: none;
+  }
+
+  .filter-buttons .btn {
+    transition: all 0.2s ease;
+  }
+  
+  .filter-buttons .btn:hover {
+    transform: translateY(-1px);
+  }
+
+  .no-vehicles-message {
+    text-align: center;
+    padding: 3rem 1rem;
+    background-color: #f8f9fc;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .no-vehicles-message i {
+    font-size: 3rem;
+    color: #d1d3e2;
+    margin-bottom: 1rem;
+  }
+  
+  .no-vehicles-message h5 {
+    font-weight: 700;
+    color: #5a5c69;
+    margin-bottom: 0.5rem;
+  }
+  
+  .no-vehicles-message p {
+    color: #858796;
+  }
+
+  /* Searchable Vehicle Dropdown Styles */
+  .vehicle-search-wrapper {
+    position: relative;
+  }
+
+  .vehicle-search-input {
+    width: 100%;
+    padding: 0.75rem 2.5rem 0.75rem 0.75rem;
+    border: 1px solid #d1d3e2;
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
+    background-color: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .vehicle-search-input:focus {
+    border-color: #4e73df;
+    box-shadow: 0 0 0 0.2rem rgba(78, 115, 223, 0.25);
+    outline: none;
+    cursor: text;
+  }
+
+  .vehicle-search-input.has-value {
+    color: #5a5c69;
+    font-weight: 500;
+  }
+
+  .vehicle-search-icon {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #858796;
+    pointer-events: none;
+    transition: all 0.2s ease;
+  }
+
+  .vehicle-search-clear {
+    position: absolute;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #858796;
+    cursor: pointer;
+    padding: 0.25rem;
+    border-radius: 50%;
+    display: none;
+    transition: all 0.2s ease;
+  }
+
+  .vehicle-search-clear:hover {
+    color: #e74a3b;
+    background-color: #f8f9fc;
+  }
+
+  .vehicle-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    background: white;
+    border: 1px solid #e3e6f0;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    max-height: 400px;
+    display: none;
+    margin-top: 0.25rem;
+    overflow: hidden;
+  }
+
+  .vehicle-dropdown.show {
+    display: block;
+    animation: dropdownFadeIn 0.2s ease-out;
+  }
+
+  @keyframes dropdownFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .vehicle-dropdown-header {
+    padding: 0.75rem 1rem;
+    background-color: #f8f9fc;
+    border-bottom: 1px solid #e3e6f0;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #5a5c69;
+  }
+
+  .vehicle-dropdown-list {
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .vehicle-dropdown-item {
+    padding: 1rem;
+    border-bottom: 1px solid #f1f1f1;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .vehicle-dropdown-item:hover {
+    background-color: #f8f9fc;
+  }
+
+  .vehicle-dropdown-item:last-child {
+    border-bottom: none;
+  }
+
+  .vehicle-dropdown-item.selected {
+    background-color: #e3f2fd;
+    border-left: 4px solid #4e73df;
+  }
+
+  .vehicle-dropdown-item.focused {
+    background-color: #f0f8ff;
+    outline: 2px solid #4e73df;
+    outline-offset: -2px;
+  }
+
+  .vehicle-item-image {
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 0.375rem;
+    border: 1px solid #e3e6f0;
+  }
+
+  .vehicle-item-icon {
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #f8f9fc;
+    border: 1px solid #e3e6f0;
+    border-radius: 0.375rem;
+    color: #858796;
+    font-size: 1.25rem;
+  }
+
+  .vehicle-item-details {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .vehicle-item-details h6 {
+    margin: 0 0 0.25rem 0;
+    font-weight: 600;
+    color: #5a5c69;
+    font-size: 0.875rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vehicle-item-details .text-muted {
+    font-size: 0.75rem;
+    margin: 0;
+    color: #858796;
+  }
+
+  .vehicle-item-badges {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  .vehicle-item-badges .badge {
+    font-size: 0.65rem;
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
+  }
+
+  .no-vehicles-found {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: #858796;
+  }
+
+  .no-vehicles-found i {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: #d1d3e2;
+  }
+
+  .no-vehicles-found h6 {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #5a5c69;
+  }
+
+  .no-vehicles-found p {
+    margin: 0;
+    font-size: 0.875rem;
+  }
+
+  /* Custom scrollbar for dropdown */
+  .vehicle-dropdown-list::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .vehicle-dropdown-list::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+
+  .vehicle-dropdown-list::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+  }
+
+  .vehicle-dropdown-list::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+
+  /* Loading state */
+  .vehicle-dropdown-loading {
+    padding: 2rem 1rem;
+    text-align: center;
+    color: #858796;
+  }
+
+  .vehicle-dropdown-loading i {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  /* Starting location info card */
+  .starting-location-info {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .starting-location-info .icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .vehicle-dropdown {
+      max-height: 300px;
+    }
+    
+    .vehicle-dropdown-list {
+      max-height: 220px;
+    }
+    
+    .vehicle-dropdown-item {
+      padding: 0.75rem;
+    }
+    
+    .vehicle-item-image,
+    .vehicle-item-icon {
+      width: 40px;
+      height: 40px;
+    }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <!-- Page Header -->
+  <div class="d-sm-flex align-items-center justify-content-between mb-4">
+    <h1 class="h3 mb-0 text-gray-800">Start New Trip</h1>
+  </div>
+  
+  {% if user.license_expiry and user.license_expiry < today %}
+  <div class="alert alert-danger license-expired-alert mb-4">
+    <i class="fas fa-exclamation-circle me-2"></i>
+    <strong>Warning:</strong> Your driver's license has expired or is not on file. Please contact your manager to update your license information.
+  </div>
+  {% endif %}
+  
+  <div class="card shadow mb-4">
+    <div class="card-header py-3">
+      <h6 class="m-0 font-weight-bold text-primary">New Trip Details</h6>
+    </div>
+    <div class="card-body">
+      <div class="step-indicator">
+        <div class="step active" id="step1-indicator">1. Select Vehicle</div>
+        <div class="step" id="step2-indicator">2. Trip Details</div>
+        <div class="step" id="step3-indicator">3. Confirm</div>
+      </div>
+      
+      <form method="post" id="tripForm">
+        {% csrf_token %}
+        {{ form.non_field_errors }}
+        
+        <!-- Step 1: Select Vehicle -->
+        <div class="form-step active" id="step1">
+          <h5 class="mb-3">Select a Vehicle</h5>
+          
+          {% if available_vehicles %}
+          
+          <!-- Searchable Vehicle Selection -->
+          <div class="mb-3">
+            <label for="vehicleSearchInput" class="form-label">
+              <i class="fas fa-car me-1"></i>Available Vehicles
+            </label>
+            <div class="vehicle-search-wrapper">
+              <input 
+                type="text" 
+                class="vehicle-search-input" 
+                id="vehicleSearchInput" 
+                placeholder="Click to select or type to search vehicles..."
+                autocomplete="off"
+                readonly
+              >
+              <i class="fas fa-chevron-down vehicle-search-icon" id="vehicleSearchIcon"></i>
+              <button type="button" class="vehicle-search-clear" id="vehicleSearchClear">
+                <i class="fas fa-times"></i>
+              </button>
+              
+              <!-- Hidden form field -->
+              <input type="hidden" name="vehicle" id="{{ form.vehicle.id_for_label }}" value="">
+              
+              <!-- Custom dropdown -->
+              <div class="vehicle-dropdown" id="vehicleDropdown">
+                <div class="vehicle-dropdown-header">
+                  <span id="vehicleDropdownHeader">Available Vehicles ({{ available_vehicles|length }})</span>
+                </div>
+                <div class="vehicle-dropdown-list" id="vehicleDropdownList">
+                  <!-- Populated by JavaScript -->
+                </div>
+              </div>
+            </div>
+            
+            {% if form.vehicle.errors %}
+            <div class="invalid-feedback d-block">{{ form.vehicle.errors }}</div>
+            {% endif %}
+            <div class="form-text">
+              Search by make, model, license plate, or vehicle type
+            </div>
+          </div>
+          
+          <!-- Driver Selection for Management Users -->
+          {% if is_management %}
+          <div class="mb-3">
+            <label for="driver" class="form-label">
+              <i class="fas fa-user me-1"></i>Select Driver (Optional)
+            </label>
+            <select class="form-select" id="driver" name="driver">
+              <option value="">I will drive myself</option>
+              {% for driver in drivers %}
+              <option value="{{ driver.id }}">
+                {{ driver.get_full_name }} ({{ driver.email }})
+              </option>
+              {% endfor %}
+            </select>
+            <div class="form-text">Leave blank to assign trip to yourself</div>
+          </div>
+          {% endif %}
+          
+          <!-- Quick Vehicle Filter Buttons -->
+          <div class="mb-4 filter-buttons">
+            <small class="text-muted">Quick filters:</small><br>
+            <button type="button" class="btn btn-primary btn-sm me-2 mt-1" data-filter="all">
+              <i class="fas fa-list me-1"></i>All Vehicles
+            </button>
+            {% for vehicle_type in vehicle_types %}
+            <button type="button" class="btn btn-outline-secondary btn-sm me-2 mt-1" data-filter="{{ vehicle_type.name }}">
+              <i class="fas fa-car me-1"></i>{{ vehicle_type.name }}
+            </button>
+            {% endfor %}
+          </div>
+          
+          <div class="mt-4 text-end">
+            <button type="button" class="btn btn-primary" id="step1Next" disabled>
+              Next <i class="fas fa-arrow-right ms-1"></i>
+            </button>
+          </div>
+          
+          {% else %}
+          <div class="no-vehicles-message">
+            <i class="fas fa-car-side"></i>
+            <h5>No Available Vehicles</h5>
+            <p>There are no vehicles available for use at the moment. Please try again later or contact your manager.</p>
+          </div>
+          {% endif %}
+        </div>
+        
+        <!-- Step 2: Trip Details (No Destination Required) -->
+        <div class="form-step" id="step2">
+          <h5 class="mb-3">Trip Details</h5>
+          
+          <!-- Starting Location Information -->
+          <div class="starting-location-info">
+            <div class="text-center">
+              <i class="fas fa-map-marker-alt icon"></i>
+              <h5 class="mb-2">Starting Location</h5>
+              <p class="mb-0">Enter where you're beginning this trip from</p>
+            </div>
+          </div>
+          
+          <!-- Starting Location -->
+          <div class="row mb-4">
+            <div class="col-md-12">
+              <div class="mb-3 position-relative">
+                <label for="{{ form.origin.id_for_label }}" class="form-label">
+                  <i class="fas fa-map-marker-alt text-success me-1"></i>
+                  Starting Location
+                </label>
+                {{ form.origin }}
+                {% if form.origin.errors %}
+                <div class="invalid-feedback d-block">{{ form.origin.errors }}</div>
+                {% endif %}
+                <div class="form-text">
+                  Enter your starting point (office, warehouse, home, etc.)
+                </div>
+                <div class="location-suggestions" id="originSuggestions"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Destination Notice -->
+          <div class="alert alert-info mb-4">
+            <i class="fas fa-info-circle me-2"></i>
+            <strong>Note:</strong> You don't need to specify your destination now. You can add it when you end the trip, as many trips involve multiple stops or unknown final destinations.
+          </div>
+          
+          <!-- Trip Details -->
+          <div class="row mt-4">
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="{{ form.start_odometer.id_for_label }}" class="form-label">
+                  <i class="fas fa-tachometer-alt me-1"></i>Start Odometer Reading (km)
+                </label>
+                {{ form.start_odometer }}
+                {% if form.start_odometer.errors %}
+                <div class="invalid-feedback d-block">{{ form.start_odometer.errors }}</div>
+                {% endif %}
+                <div class="form-text">
+                  Verify the current odometer reading matches the vehicle's display
+                </div>
+              </div>
+            </div>
+            
+            <div class="col-md-6">
+              <div class="mb-3">
+                <label for="{{ form.purpose.id_for_label }}" class="form-label">
+                  <i class="fas fa-clipboard-list me-1"></i>Purpose of Trip
+                </label>
+                {{ form.purpose }}
+                {% if form.purpose.errors %}
+                <div class="invalid-feedback d-block">{{ form.purpose.errors }}</div>
+                {% endif %}
+                <div class="form-text">
+                  Briefly describe the purpose (e.g., Client Visit, Delivery Route, Field Work)
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="mb-3">
+            <label for="{{ form.notes.id_for_label }}" class="form-label">
+              <i class="fas fa-sticky-note me-1"></i>Additional Notes (Optional)
+            </label>
+            {{ form.notes }}
+            {% if form.notes.errors %}
+            <div class="invalid-feedback d-block">{{ form.notes.errors }}</div>
+            {% endif %}
+            <div class="form-text">
+              Any additional information about the trip (passengers, special equipment, etc.)
+            </div>
+          </div>
+          
+          <div class="mt-4 d-flex justify-content-between">
+            <button type="button" class="btn btn-secondary" id="step2Back">
+              <i class="fas fa-arrow-left me-1"></i> Back
+            </button>
+            <button type="button" class="btn btn-primary" id="step2Next">
+              Next <i class="fas fa-arrow-right ms-1"></i>
+            </button>
+          </div>
+        </div>
+        
+        <!-- Step 3: Confirm -->
+        <div class="form-step" id="step3">
+          <h5 class="mb-3">Confirm Trip Details</h5>
+          
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-title">
+                <i class="fas fa-car me-1"></i>Selected Vehicle
+              </h6>
+              <div id="selectedVehicleInfo">
+                <!-- Populated by JavaScript -->
+              </div>
+            </div>
+          </div>
+
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-title">
+                <i class="fas fa-map-marker-alt me-1"></i>Starting Location
+              </h6>
+              <div id="startingLocationInfo">
+                <!-- Populated by JavaScript -->
+              </div>
+            </div>
+          </div>
+          
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-title">
+                <i class="fas fa-clipboard-list me-1"></i>Trip Information
+              </h6>
+              <div id="tripDetailsSummary">
+                <!-- Populated by JavaScript -->
+              </div>
+            </div>
+          </div>
+          
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-title">
+                <i class="fas fa-user me-1"></i>Driver Information
+              </h6>
+              <div id="driverInfo">
+                <!-- Driver info will be populated by JavaScript -->
+              </div>
+            </div>
+          </div>
+          
+          <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Important:</strong> 
+            <ul class="mb-0 mt-2">
+              <li>Confirm you have performed a visual inspection of the vehicle</li>
+              <li>Ensure the vehicle is in good condition for use</li>
+              <li>You can add your destination when you end the trip</li>
+              <li>The trip will start immediately upon submission</li>
+              <li><strong>GPS tracking will be enabled</strong> to track your route during the trip</li>
+            </ul>
+          </div>
+          
+          <!-- GPS Tracking Indicator (Hidden initially, shown after trip starts) -->
+          <div id="gps-tracking-indicator" class="alert alert-info" style="display: none;">
+            <div class="d-flex justify-content-between align-items-center">
+              <span><i class="fas fa-map-marker-alt"></i> Initializing GPS tracking...</span>
+            </div>
+          </div>
+          
+          <div class="mt-4 d-flex justify-content-between">
+            <button type="button" class="btn btn-secondary" id="step3Back">
+              <i class="fas fa-arrow-left me-1"></i> Back
+            </button>
+            <button type="submit" class="btn btn-success btn-lg">
+              <i class="fas fa-play me-1"></i> Start Trip Now
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- GPS Tracker -->
+<script src="{% static 'js/gps-tracker.js' %}"></script>
+
+<!-- GPS Permission Modal -->
+<div class="modal fade" id="gpsPermissionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">
+          <i class="fas fa-map-marker-alt me-2"></i>GPS Tracking Required
+        </h5>
+      </div>
+      <div class="modal-body">
+        <div class="text-center py-3" id="gpsRequestingPermission">
+          <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <h6>Requesting GPS Permission...</h6>
+          <p class="text-muted">Please allow location access when prompted by your browser.</p>
+        </div>
+        
+        <div class="text-center py-3 d-none" id="gpsPermissionGranted">
+          <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+          <h6 class="text-success">GPS Permission Granted</h6>
+          <p class="text-muted">Your location will be tracked during the trip to verify mileage.</p>
+        </div>
+        
+        <div class="text-center py-3 d-none" id="gpsPermissionDenied">
+          <i class="fas fa-times-circle text-danger fa-3x mb-3"></i>
+          <h6 class="text-danger">GPS Permission Denied</h6>
+          <p class="text-muted" id="gpsErrorMessage"></p>
+          <div class="alert alert-warning">
+            <strong>Note:</strong> GPS tracking is required to track your route during the trip.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" id="gpsModalFooter">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="gpsRetryButton" style="display:none;">
+          <i class="fas fa-redo me-1"></i>Retry
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Debug: Check user type
+  console.log('Current user type: {{ user.user_type }}');
+  console.log('GPS tracking check: {{ user.user_type }} === "personal_vehicle_staff" ?', '{{ user.user_type }}' === 'personal_vehicle_staff');
+  
+  // Form step elements
+  const step1 = document.getElementById('step1');
+  const step2 = document.getElementById('step2');
+  const step3 = document.getElementById('step3');
+  
+  const step1Indicator = document.getElementById('step1-indicator');
+  const step2Indicator = document.getElementById('step2-indicator');
+  const step3Indicator = document.getElementById('step3-indicator');
+  
+  const step1Next = document.getElementById('step1Next');
+  const step2Back = document.getElementById('step2Back');
+  const step2Next = document.getElementById('step2Next');
+  const step3Back = document.getElementById('step3Back');
+  
+  // Form fields
+  const originField = document.getElementById('{{ form.origin.id_for_label }}');
+  const startOdometerField = document.getElementById('{{ form.start_odometer.id_for_label }}');
+  const purposeField = document.getElementById('{{ form.purpose.id_for_label }}');
+  const notesField = document.getElementById('{{ form.notes.id_for_label }}');
+  
+  // Vehicle search elements
+  const vehicleSearchInput = document.getElementById('vehicleSearchInput');
+  const vehicleSearchIcon = document.getElementById('vehicleSearchIcon');
+  const vehicleSearchClear = document.getElementById('vehicleSearchClear');
+  const vehicleDropdown = document.getElementById('vehicleDropdown');
+  const vehicleDropdownList = document.getElementById('vehicleDropdownList');
+  const vehicleDropdownHeader = document.getElementById('vehicleDropdownHeader');
+  const hiddenVehicleField = document.getElementById('{{ form.vehicle.id_for_label }}');
+  
+  // Vehicle data and state
+  let allVehicles = [];
+  let filteredVehicles = [];
+  let selectedVehicle = null;
+  let focusedIndex = -1;
+  let isDropdownOpen = false;
+  
+  // Build vehicles data array
+  {% for vehicle in available_vehicles %}
+  allVehicles.push({
+    id: '{{ vehicle.id }}',
+    make: '{{ vehicle.make }}',
+    model: '{{ vehicle.model }}',
+    plate: '{{ vehicle.license_plate }}',
+    type: '{{ vehicle.vehicle_type.name|default:"Unknown" }}',
+    fuel: '{{ vehicle.fuel_type|default:"Unknown" }}',
+    odometer: '{{ vehicle.current_odometer|default:"0" }}',
+    image: '{% if vehicle.image %}{{ vehicle.image.url }}{% endif %}',
+    searchText: '{{ vehicle.make }} {{ vehicle.model }} {{ vehicle.license_plate }} {{ vehicle.vehicle_type.name|default:"" }}'.toLowerCase()
+  });
+  {% endfor %}
+  
+  filteredVehicles = [...allVehicles];
+  
+  // Render dropdown items
+  function renderDropdown() {
+    vehicleDropdownList.innerHTML = '';
+    
+    if (filteredVehicles.length === 0) {
+      vehicleDropdownList.innerHTML = `
+        <div class="no-vehicles-found">
+          <i class="fas fa-car-side"></i>
+          <h6>No Vehicles Found</h6>
+          <p>No vehicles match your search criteria.</p>
+        </div>
+      `;
+      return;
+    }
+    
+    filteredVehicles.forEach((vehicle, index) => {
+      const item = document.createElement('div');
+      item.className = 'vehicle-dropdown-item';
+      item.dataset.vehicleId = vehicle.id;
+      item.dataset.index = index;
+      
+      if (selectedVehicle && selectedVehicle.id === vehicle.id) {
+        item.classList.add('selected');
+      }
+      
+      item.innerHTML = `
+        ${vehicle.image ? 
+          `<img src="${vehicle.image}" class="vehicle-item-image" alt="${vehicle.plate}">` :
+          '<div class="vehicle-item-icon"><i class="fas fa-car"></i></div>'
+        }
+        <div class="vehicle-item-details">
+          <h6>${vehicle.make} ${vehicle.model}</h6>
+          <div class="text-muted">${vehicle.plate} • ${vehicle.type}</div>
+        </div>
+        <div class="vehicle-item-badges">
+          <span class="badge bg-primary">${vehicle.fuel}</span>
+          <span class="badge bg-secondary">${vehicle.odometer} km</span>
+        </div>
+      `;
+      
+      item.addEventListener('click', () => selectVehicle(vehicle));
+      vehicleDropdownList.appendChild(item);
+    });
+  }
+  
+  // Select vehicle
+  function selectVehicle(vehicle) {
+    selectedVehicle = vehicle;
+    hiddenVehicleField.value = vehicle.id;
+    
+    // Update input display
+    vehicleSearchInput.value = `${vehicle.make} ${vehicle.model} (${vehicle.plate})`;
+    vehicleSearchInput.classList.add('has-value');
+    
+    // Update odometer
+    startOdometerField.value = vehicle.odometer;
+    startOdometerField.min = vehicle.odometer;
+    
+    // Show clear button, hide dropdown
+    vehicleSearchClear.style.display = 'block';
+    vehicleSearchIcon.style.display = 'none';
+    closeDropdown();
+    
+    // Enable next button
+    step1Next.disabled = false;
+    
+    // Make input readonly
+    vehicleSearchInput.setAttribute('readonly', true);
+  }
+  
+  // Clear selection
+  function clearSelection() {
+    selectedVehicle = null;
+    hiddenVehicleField.value = '';
+    vehicleSearchInput.value = '';
+    vehicleSearchInput.classList.remove('has-value');
+    vehicleSearchInput.removeAttribute('readonly');
+    
+    vehicleSearchClear.style.display = 'none';
+    vehicleSearchIcon.style.display = 'block';
+    
+    step1Next.disabled = true;
+    renderDropdown();
+  }
+  
+  // Open dropdown
+  function openDropdown() {
+    if (isDropdownOpen) return;
+    
+    isDropdownOpen = true;
+    vehicleDropdown.classList.add('show');
+    vehicleSearchIcon.style.transform = 'translateY(-50%) rotate(180deg)';
+    renderDropdown();
+    focusedIndex = -1;
+  }
+  
+  // Close dropdown
+  function closeDropdown() {
+    if (!isDropdownOpen) return;
+    
+    isDropdownOpen = false;
+    vehicleDropdown.classList.remove('show');
+    vehicleSearchIcon.style.transform = 'translateY(-50%) rotate(0deg)';
+    focusedIndex = -1;
+    
+    // Reset input if no selection
+    if (!selectedVehicle) {
+      vehicleSearchInput.value = '';
+      vehicleSearchInput.setAttribute('readonly', true);
+    }
+  }
+  
+  // Search vehicles
+  function searchVehicles(query) {
+    const searchTerm = query.toLowerCase().trim();
+    
+    if (!searchTerm) {
+      filteredVehicles = [...allVehicles];
+    } else {
+      filteredVehicles = allVehicles.filter(vehicle => 
+        vehicle.searchText.includes(searchTerm)
+      );
+    }
+    
+    updateDropdownHeader();
+    renderDropdown();
+  }
+  
+  // Update dropdown header
+  function updateDropdownHeader() {
+    const count = filteredVehicles.length;
+    vehicleDropdownHeader.textContent = `Available Vehicles (${count})`;
+  }
+  
+  // Handle keyboard navigation
+  function handleKeyNavigation(e) {
+    const items = vehicleDropdownList.querySelectorAll('.vehicle-dropdown-item');
+    
+    switch(e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        focusedIndex = Math.min(focusedIndex + 1, items.length - 1);
+        updateFocusedItem(items);
+        break;
+        
+      case 'ArrowUp':
+        e.preventDefault();
+        focusedIndex = Math.max(focusedIndex - 1, -1);
+        updateFocusedItem(items);
+        break;
+        
+      case 'Enter':
+        e.preventDefault();
+        if (focusedIndex >= 0 && items[focusedIndex]) {
+          const vehicleId = items[focusedIndex].dataset.vehicleId;
+          const vehicle = filteredVehicles.find(v => v.id === vehicleId);
+          if (vehicle) selectVehicle(vehicle);
+        }
+        break;
+        
+      case 'Escape':
+        closeDropdown();
+        vehicleSearchInput.blur();
+        break;
+    }
+  }
+  
+  // Update focused item
+  function updateFocusedItem(items) {
+    items.forEach((item, index) => {
+      item.classList.remove('focused');
+      if (index === focusedIndex) {
+        item.classList.add('focused');
+        item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+    });
+  }
+  
+  // Event listeners for vehicle search
+  vehicleSearchInput.addEventListener('click', () => {
+    if (!selectedVehicle) {
+      vehicleSearchInput.removeAttribute('readonly');
+      openDropdown();
+    }
+  });
+  
+  vehicleSearchInput.addEventListener('focus', () => {
+    if (!selectedVehicle) {
+      vehicleSearchInput.removeAttribute('readonly');
+      openDropdown();
+    }
+  });
+  
+  vehicleSearchInput.addEventListener('input', (e) => {
+    if (selectedVehicle) return;
+    
+    const query = e.target.value;
+    searchVehicles(query);
+    
+    if (!isDropdownOpen) openDropdown();
+    focusedIndex = -1;
+  });
+  
+  vehicleSearchInput.addEventListener('keydown', handleKeyNavigation);
+  
+  vehicleSearchClear.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearSelection();
+  });
+  
+  // Filter buttons
+  const filterButtons = document.querySelectorAll('[data-filter]');
+  filterButtons.forEach(button => {
+    button.addEventListener('click', function() {
+      const filterType = this.dataset.filter;
+      
+      // Update button states
+      filterButtons.forEach(btn => {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline-secondary');
+      });
+      this.classList.remove('btn-outline-secondary');
+      this.classList.add('btn-primary');
+      
+      // Apply filter
+      if (filterType === 'all') {
+        filteredVehicles = [...allVehicles];
+      } else {
+        filteredVehicles = allVehicles.filter(vehicle => vehicle.type === filterType);
+      }
+      
+      // Clear search and update display
+      vehicleSearchInput.value = '';
+      updateDropdownHeader();
+      renderDropdown();
+      
+      // Check if selected vehicle is still in filtered results
+      if (selectedVehicle && !filteredVehicles.find(v => v.id === selectedVehicle.id)) {
+        clearSelection();
+      }
+    });
+  });
+  
+  // Click outside to close dropdown
+  document.addEventListener('click', (e) => {
+    if (!vehicleSearchInput.contains(e.target) && !vehicleDropdown.contains(e.target)) {
+      closeDropdown();
+    }
+    
+    // Hide location suggestions
+    if (!originField.contains(e.target) && !document.getElementById('originSuggestions').contains(e.target)) {
+      document.getElementById('originSuggestions').style.display = 'none';
+    }
+  });
+  
+  // Initialize
+  renderDropdown();
+  
+  // Location suggestions
+  const commonLocations = [
+    'Main Office', 'Warehouse', 'Home Office', 'Branch Office',
+    'Distribution Center', 'Headquarters', 'Regional Office',
+    'Manufacturing Plant', 'Service Center', 'Depot'
+  ];
+  
+  function showLocationSuggestions(inputField, suggestionsContainer) {
+    const query = inputField.value.toLowerCase().trim();
+    suggestionsContainer.innerHTML = '';
+    
+    if (query.length < 2) {
+      suggestionsContainer.style.display = 'none';
+      return;
+    }
+    
+    const matches = commonLocations.filter(location => 
+      location.toLowerCase().includes(query)
+    );
+    
+    if (matches.length > 0) {
+      matches.forEach(location => {
+        const suggestion = document.createElement('div');
+        suggestion.className = 'location-suggestion';
+        suggestion.textContent = location;
+        suggestion.addEventListener('click', () => {
+          inputField.value = location;
+          suggestionsContainer.style.display = 'none';
+        });
+        suggestionsContainer.appendChild(suggestion);
+      });
+      suggestionsContainer.style.display = 'block';
+    } else {
+      suggestionsContainer.style.display = 'none';
+    }
+  }
+  
+  const originSuggestions = document.getElementById('originSuggestions');
+  
+  originField.addEventListener('input', function() {
+    showLocationSuggestions(this, originSuggestions);
+  });
+  
+  // Quick location buttons for origin
+  function addQuickLocationButtons() {
+    const quickLocations = [
+      { name: 'Main Office', icon: 'fas fa-building' },
+      { name: 'Warehouse', icon: 'fas fa-warehouse' },
+      { name: 'Home Office', icon: 'fas fa-home' },
+      { name: 'Branch Office', icon: 'fas fa-map-marker-alt' }
+    ];
+    
+    const container = originField.parentNode;
+    const quickDiv = document.createElement('div');
+    quickDiv.className = 'mt-2';
+    quickDiv.innerHTML = '<small class="text-muted">Quick locations:</small><br>';
+    
+    quickLocations.forEach(location => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-outline-secondary btn-sm me-1 mt-1';
+      btn.innerHTML = `<i class="${location.icon} me-1"></i>${location.name}`;
+      btn.addEventListener('click', () => {
+        originField.value = location.name;
+      });
+      quickDiv.appendChild(btn);
+    });
+    
+    container.appendChild(quickDiv);
+  }
+  
+  addQuickLocationButtons();
+  
+  // Step navigation
+  step1Next.addEventListener('click', () => {
+    step1.classList.remove('active');
+    step2.classList.add('active');
+    step1Indicator.classList.remove('active');
+    step1Indicator.classList.add('completed');
+    step2Indicator.classList.add('active');
+  });
+  
+  step2Back.addEventListener('click', () => {
+    step2.classList.remove('active');
+    step1.classList.add('active');
+    step2Indicator.classList.remove('active');
+    step1Indicator.classList.remove('completed');
+    step1Indicator.classList.add('active');
+  });
+  
+  step2Next.addEventListener('click', () => {
+    // Validation
+    if (!originField.value.trim()) {
+      alert('Please enter the starting location.');
+      originField.focus();
+      return;
+    }
+    
+    if (!startOdometerField.value) {
+      alert('Please enter the start odometer reading.');
+      startOdometerField.focus();
+      return;
+    }
+    
+    if (!purposeField.value.trim()) {
+      alert('Please enter the purpose of the trip.');
+      purposeField.focus();
+      return;
+    }
+    
+    updateConfirmationPage();
+    
+    step2.classList.remove('active');
+    step3.classList.add('active');
+    step2Indicator.classList.remove('active');
+    step2Indicator.classList.add('completed');
+    step3Indicator.classList.add('active');
+  });
+  
+  step3Back.addEventListener('click', () => {
+    step3.classList.remove('active');
+    step2.classList.add('active');
+    step3Indicator.classList.remove('active');
+    step2Indicator.classList.remove('completed');
+    step2Indicator.classList.add('active');
+  });
+  
+  // Update confirmation page
+  function updateConfirmationPage() {
+    const selectedVehicleInfo = document.getElementById('selectedVehicleInfo');
+    const startingLocationInfo = document.getElementById('startingLocationInfo');
+    const tripDetailsSummary = document.getElementById('tripDetailsSummary');
+    const driverInfo = document.getElementById('driverInfo');
+    
+    if (selectedVehicle) {
+      selectedVehicleInfo.innerHTML = `
+        <div class="row">
+          <div class="col-md-4 text-center">
+            ${selectedVehicle.image ? 
+              `<img src="${selectedVehicle.image}" class="img-fluid rounded mb-2" alt="${selectedVehicle.plate}" style="max-height: 150px;">` :
+              '<i class="fas fa-car fa-3x text-muted mb-2"></i>'
+            }
+          </div>
+          <div class="col-md-8">
+            <p><strong>Vehicle:</strong> ${selectedVehicle.make} ${selectedVehicle.model}</p>
+            <p><strong>License Plate:</strong> <span class="badge bg-primary">${selectedVehicle.plate}</span></p>
+            <p><strong>Type:</strong> ${selectedVehicle.type}</p>
+            <p><strong>Fuel Type:</strong> ${selectedVehicle.fuel}</p>
+            <p><strong>Current Odometer:</strong> ${selectedVehicle.odometer} km</p>
+          </div>
+        </div>
+      `;
+    }
+    
+    startingLocationInfo.innerHTML = `
+      <div class="text-center p-3">
+        <i class="fas fa-map-marker-alt text-success fa-2x mb-2"></i>
+        <h5 class="text-success mb-1">${originField.value}</h5>
+        <small class="text-muted">Trip will begin from this location</small>
+      </div>
+    `;
+    
+    tripDetailsSummary.innerHTML = `
+      <p><strong>Start Odometer:</strong> ${startOdometerField.value} km</p>
+      <p><strong>Purpose:</strong> ${purposeField.value}</p>
+      <p><strong>Additional Notes:</strong> ${notesField.value || 'None'}</p>
+      <p><strong>Start Time:</strong> ${new Date().toLocaleString()}</p>
+      <div class="alert alert-info mt-3 mb-0">
+        <i class="fas fa-info-circle me-1"></i>
+        <strong>Destination:</strong> Will be added when you end the trip
+      </div>
+    `;
+    
+    const driverSelect = document.getElementById('driver');
+    if (driverSelect && driverSelect.value) {
+      const selectedDriverOption = driverSelect.options[driverSelect.selectedIndex];
+      driverInfo.innerHTML = `
+        <p><strong>Driver:</strong> ${selectedDriverOption.text}</p>
+        <p><strong>Assigned by:</strong> {{ user.get_full_name }} ({{ user.get_user_type_display }})</p>
+      `;
+    } else {
+      driverInfo.innerHTML = `
+        <p><strong>Driver:</strong> {{ user.get_full_name }}</p>
+        <p><strong>Email:</strong> {{ user.email }}</p>
+        {% if user.license_number %}<p><strong>License:</strong> {{ user.license_number }}</p>{% endif %}
+        {% if user.license_expiry %}<p><strong>License Expiry:</strong> {{ user.license_expiry }}</p>{% endif %}
+      `;
+    }
+  }
+  
+  // GPS Tracking Logic for All Users
+  console.log('GPS Tracking: Initializing GPS logic for all users');
+  const tripForm = document.getElementById('tripForm');
+  const gpsPermissionModal = new bootstrap.Modal(document.getElementById('gpsPermissionModal'));
+  const gpsRequestingPermission = document.getElementById('gpsRequestingPermission');
+  const gpsPermissionGranted = document.getElementById('gpsPermissionGranted');
+  const gpsPermissionDenied = document.getElementById('gpsPermissionDenied');
+  const gpsErrorMessage = document.getElementById('gpsErrorMessage');
+  const gpsRetryButton = document.getElementById('gpsRetryButton');
+  const gpsModalFooter = document.getElementById('gpsModalFooter');
+  
+  let gpsPermissionStatus = false;
+  let gpsInitialLocation = null;
+  
+  // Handle form submission
+  tripForm.addEventListener('submit', async function(e) {
+    // If GPS permission already granted, allow form submission
+    if (gpsPermissionStatus) {
+      console.log('GPS already granted, submitting form');
+      return; // Allow form to submit normally
+    }
+    
+    // GPS permission not granted yet - prevent submission and request permission
+    e.preventDefault();
+    console.log('GPS not yet granted, requesting permission');
+    
+    // Show GPS permission modal
+    gpsPermissionModal.show();
+    
+    // Request GPS permission
+    requestGPSPermission();
+  });
+  
+  async function requestGPSPermission() {
+    // Show requesting state
+    gpsRequestingPermission.classList.remove('d-none');
+    gpsPermissionGranted.classList.add('d-none');
+    gpsPermissionDenied.classList.add('d-none');
+    gpsRetryButton.style.display = 'none';
+    
+    try {
+      // Check if GPS is supported
+      if (!gpsTracker.isSupported()) {
+        throw new Error('GPS tracking is not supported by your browser. Please use a modern browser like Chrome, Firefox, or Safari.');
+      }
+      
+      // Request permission
+      const result = await gpsTracker.requestPermission();
+      
+      // Permission granted
+      gpsPermissionStatus = true;
+      gpsInitialLocation = result.location;
+      
+      console.log('GPS Permission Granted:', result.location);
+      
+      // Add GPS coordinates to form BEFORE submitting
+      const gpsStartLatInput = document.createElement('input');
+      gpsStartLatInput.type = 'hidden';
+      gpsStartLatInput.name = 'gps_start_lat';
+      gpsStartLatInput.value = result.location.latitude;
+      tripForm.appendChild(gpsStartLatInput);
+      
+      const gpsStartLonInput = document.createElement('input');
+      gpsStartLonInput.type = 'hidden';
+      gpsStartLonInput.name = 'gps_start_lon';
+      gpsStartLonInput.value = result.location.longitude;
+      tripForm.appendChild(gpsStartLonInput);
+      
+      const gpsEnabledInput = document.createElement('input');
+      gpsEnabledInput.type = 'hidden';
+      gpsEnabledInput.name = 'gps_tracking_enabled';
+      gpsEnabledInput.value = 'true';
+      tripForm.appendChild(gpsEnabledInput);
+      
+      console.log('GPS data added to form:', {
+        lat: result.location.latitude,
+        lon: result.location.longitude,
+        enabled: true
+      });
+      
+      // Show success state
+      gpsRequestingPermission.classList.add('d-none');
+      gpsPermissionGranted.classList.remove('d-none');
+      
+      // Auto-close modal and submit form after 1.5 seconds
+      setTimeout(() => {
+        gpsPermissionModal.hide();
+        tripForm.submit();
+      }, 1500);
+      
+    } catch (error) {
+      // Permission denied or error
+      console.error('GPS permission error:', error);
+      
+      gpsPermissionStatus = false;
+      gpsInitialLocation = null;
+      
+      // Show error state
+      gpsRequestingPermission.classList.add('d-none');
+      gpsPermissionDenied.classList.remove('d-none');
+      gpsErrorMessage.textContent = error.message;
+      gpsRetryButton.style.display = 'inline-block';
+    }
+  }
+  
+  // Retry button handler
+  gpsRetryButton.addEventListener('click', function() {
+    requestGPSPermission();
+  });
+});
+</script>
+{% endblock %}
+

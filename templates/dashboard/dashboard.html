@@ -1,0 +1,2646 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Dashboard - Vehicle Management System{% endblock %}
+
+{% block extra_css %}
+<link href="{% static 'css/dashboard.css' %}" rel="stylesheet">
+<!-- Add Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<!-- Add Leaflet CSS and JS for maps -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  /* Enhanced dashboard styles */
+  .stats-card {
+    transition: all 0.3s ease;
+    border-left: 4px solid #4e73df;
+  }
+
+  .stats-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+  }
+  
+  .stats-icon {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(78, 115, 223, 0.1);
+    border-radius: 50%;
+    color: #4e73df;
+  }
+  
+  .stats-icon i {
+    font-size: 1.8rem;
+  }
+  
+  .stats-title {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1rem;
+    font-weight: 700;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+  }
+  
+  .stats-number {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: #5a5c69;
+    margin-bottom: 0;
+  }
+  
+  .welcome-card {
+    background-color: #f8f9fc;
+    border-radius: 0.35rem;
+    padding: 1.5rem;
+    border-left: 4px solid #4e73df;
+  }
+  
+  .chart-container {
+    position: relative;
+    height: 250px;
+    width: 100%;
+  }
+  
+  .active-trip-card {
+    border: 1px solid #e3e6f0;
+    border-radius: 0.35rem;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    background-color: #fff;
+  }
+
+  #dailyView, #weeklyView {
+    height: 280px;
+    position: relative;
+  }
+
+  #dailyActivityChart, #weeklyActivityChart {
+    max-height: 100%;
+  }
+
+  /* Vehicle Type Section Styles */
+  .vehicle-type-section {
+    border-left: 4px solid #e3e6f0;
+    padding-left: 1rem;
+    margin-left: 1rem;
+  }
+
+  .vehicle-type-section:hover {
+    border-left-color: #4e73df;
+    background-color: #f8f9fc;
+    border-radius: 0 0.35rem 0.35rem 0;
+  }
+
+  /* Base style for all vehicle type badges */
+  .badge-vehicle-type {
+    font-weight: 600;
+    font-size: 0.75rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 0.375rem;
+  }
+
+  /* Bikes and Motorcycles - Green */
+  .badge-vehicle-type[data-type*="Bike"], 
+  .badge-vehicle-type[data-type*="Motorcycle"] {
+    background-color: #1cc88a !important;
+    color: #ffffff !important;
+  }
+
+  /* Cars - Blue */
+  .badge-vehicle-type[data-type*="Car"] {
+    background-color: #36b9cc !important;
+    color: #ffffff !important;
+  }
+
+  /* Trucks - Yellow with dark text */
+  .badge-vehicle-type[data-type*="Truck"] {
+    background-color: #f6c23e !important;
+    color: #1a1a1a !important;
+  }
+
+  /* Vans - Red */
+  .badge-vehicle-type[data-type*="Van"] {
+    background-color: #e74a3b !important;
+    color: #ffffff !important;
+  }
+
+  /* SUVs - Purple */
+  .badge-vehicle-type[data-type*="SUV"] {
+    background-color: #6f42c1 !important;
+    color: #ffffff !important;
+  }
+
+  /* Electric Vehicles - Electric Blue */
+  .badge-vehicle-type[data-type*="Electric"],
+  .badge-vehicle-type[data-type*="EV"],
+  .badge-vehicle-type[data-type*="Hybrid"] {
+    background-color: #17a2b8 !important;
+    color: #ffffff !important;
+  }
+
+  /* Commercial Vehicles - Orange */
+  .badge-vehicle-type[data-type*="Commercial"] {
+    background-color: #fd7e14 !important;
+    color: #ffffff !important;
+  }
+
+  /* Pickup - Brown */
+  .badge-vehicle-type[data-type*="Pickup"] {
+    background-color: #795548 !important;
+    color: #ffffff !important;
+  }
+
+  /* Bus - Dark Blue */
+  .badge-vehicle-type[data-type*="Bus"] {
+    background-color: #343a40 !important;
+    color: #ffffff !important;
+  }
+
+  /* Default for any other vehicle types - Gray */
+  .badge-vehicle-type:not([data-type*="Bike"]):not([data-type*="Motorcycle"]):not([data-type*="Car"]):not([data-type*="Truck"]):not([data-type*="Van"]):not([data-type*="SUV"]):not([data-type*="Electric"]):not([data-type*="EV"]):not([data-type*="Hybrid"]):not([data-type*="Commercial"]):not([data-type*="Pickup"]):not([data-type*="Bus"]) {
+    background-color: #6c757d !important;
+    color: #ffffff !important;
+  }
+
+  .trip-type-toggle .btn.active {
+    background-color: #4e73df;
+    border-color: #4e73df;
+    color: white;
+  }
+
+  .vehicle-type-icon {
+    min-width: 40px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+<div class="dashboard-container">
+  <div class="row">
+    <div class="col-lg-12">
+      <div class="welcome-card mb-4">
+        <h1>Welcome, {{ request.user.get_full_name }}</h1>
+        <p>{{ request.user.get_user_type_display }} Dashboard</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="row">
+    {% if request.user.user_type != 'personal_vehicle_staff' %}
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Total Vehicles</h6>
+              <h3 class="stats-number">{{ total_vehicles }}</h3>
+            </div>
+            <div class="stats-icon">
+              <i class="fas fa-car"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Active Trips</h6>
+              <h3 class="stats-number">{{ active_trips }}</h3>
+            </div>
+            <div class="stats-icon">
+              <i class="fas fa-route"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    
+    {% if request.user.user_type == 'admin' or request.user.user_type == 'manager' %}
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Upcoming Maintenance</h6>
+              <h3 class="stats-number">{{ upcoming_maintenance|length }}</h3>
+            </div>
+            <div class="stats-icon">
+              <i class="fas fa-tools"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Expiring Documents</h6>
+              <h3 class="stats-number">{{ expiring_documents|length }}</h3>
+            </div>
+            <div class="stats-icon">
+              <i class="fas fa-file-alt"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    
+    {% if request.user.user_type == 'vehicle_manager' %}
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Available Vehicles</h6>
+              <h3 class="stats-number">{{ available_vehicles }}</h3>
+            </div>
+            <div class="stats-icon">
+              <i class="fas fa-check-circle"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Vehicles In Use</h6>
+              <h3 class="stats-number">{{ unavailable_vehicles }}</h3>
+            </div>
+            <div class="stats-icon">
+              <i class="fas fa-car-side"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    
+    {% if request.user.user_type == 'driver' or request.user.user_type == 'company_vehicle_staff' %}
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Monthly Distance</h6>
+              <h3 class="stats-number">{{ monthly_distance }} km</h3>
+            </div>
+            <div class="stats-icon">
+              <i class="fas fa-road"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Monthly Trips</h6>
+              <h3 class="stats-number">{{ monthly_trips }}</h3>
+            </div>
+            <div class="stats-icon">
+              <i class="fas fa-map-marked-alt"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    
+    {% if request.user.user_type == 'personal_vehicle_staff' %}
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4 border-primary">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Monthly Distance</h6>
+              <h3 class="stats-number">{{ monthly_distance }} km</h3>
+            </div>
+            <div class="stats-icon bg-primary">
+              <i class="fas fa-road"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4 border-info">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Monthly Trips</h6>
+              <h3 class="stats-number">{{ monthly_trips }}</h3>
+            </div>
+            <div class="stats-icon bg-info">
+              <i class="fas fa-map-marked-alt"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4 border-success">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Monthly Reimbursement</h6>
+              <h3 class="stats-number text-success">₹{{ monthly_reimbursement|floatformat:2 }}</h3>
+            </div>
+            <div class="stats-icon bg-success">
+              <i class="fas fa-dollar-sign"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4 border-warning">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Rate per KM</h6>
+              <h3 class="stats-number">₹{{ reimbursement_rate|floatformat:2 }}</h3>
+            </div>
+            <div class="stats-icon bg-warning">
+              <i class="fas fa-calculator"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {% if pending_approval_count and pending_approval_count > 0 %}
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4 border-warning">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Pending Approval</h6>
+              <h3 class="stats-number text-warning">{{ pending_approval_count }}</h3>
+              <small class="text-muted">Awaiting manager review</small>
+            </div>
+            <div class="stats-icon bg-warning">
+              <i class="fas fa-hourglass-half"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% if rejected_approval_count and rejected_approval_count > 0 %}
+    <div class="col-lg-3 col-md-6">
+      <div class="card stats-card mb-4 border-danger">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center">
+            <div>
+              <h6 class="stats-title">Rejected (this month)</h6>
+              <h3 class="stats-number text-danger">{{ rejected_approval_count }}</h3>
+              <small class="text-muted">Not counted for reimbursement</small>
+            </div>
+            <div class="stats-icon bg-danger">
+              <i class="fas fa-times-circle"></i>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  <!-- Admin and Manager Dashboard -->
+  {% if request.user.user_type == 'admin' or request.user.user_type == 'manager' %}
+  <div class="row">
+    <!-- Vehicle Status Chart -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Vehicle Status</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="vehicleStatusChart" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Vehicle Types Chart -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Vehicles by Type</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="vehicleTypesChart" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Fuel Expenses Overview -->
+  <div class="row">
+    <div class="col-lg-8 mx-auto">
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="card-title">Fuel Expenses Overview</h5>
+          <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-primary active" id="monthlyFuelBtn">Monthly</button>
+            <button type="button" class="btn btn-outline-primary" id="weeklyFuelBtn">Weekly</button>
+            <button type="button" class="btn btn-outline-primary" id="dailyFuelBtn">Daily</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="monthlyFuelView">
+            <canvas id="fuelExpensesMonthlyChart" height="450"></canvas>
+          </div>
+          <div id="weeklyFuelView" style="display:none;">
+            <canvas id="fuelExpensesWeeklyChart" height="450"></canvas>
+          </div>
+          <div id="dailyFuelView" style="display:none;">
+            <canvas id="fuelExpensesDailyChart" height="450"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Enhanced Ongoing Trips Section -->
+  <div class="row">
+    <div class="col-lg-12">
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">
+            <i class="fas fa-route me-2"></i>Ongoing Trips by Vehicle Type
+          </h5>
+          <div class="trip-type-toggle">
+            <button class="btn btn-sm btn-outline-primary active" data-view="grouped">
+              <i class="fas fa-layer-group me-1"></i>Grouped
+            </button>
+            <button class="btn btn-sm btn-outline-primary" data-view="list">
+              <i class="fas fa-list me-1"></i>List
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- Summary Cards -->
+          {% if ongoing_trips_summary %}
+          <div class="row mb-4">
+            {% for vehicle_type, count in ongoing_trips_summary.items %}
+            <div class="col-lg-3 col-md-6 mb-3">
+              <div class="card bg-light border-0">
+                <div class="card-body text-center">
+                  <div class="text-primary mb-2">
+                    {% if 'Bike' in vehicle_type or 'Motorcycle' in vehicle_type %}
+                      <i class="fas fa-motorcycle fa-2x"></i>
+                    {% elif 'Car' in vehicle_type %}
+                      <i class="fas fa-car fa-2x"></i>
+                    {% elif 'Truck' in vehicle_type %}
+                      <i class="fas fa-truck fa-2x"></i>
+                    {% elif 'Van' in vehicle_type %}
+                      <i class="fas fa-van fa-2x"></i>
+                    {% elif 'SUV' in vehicle_type %}
+                      <i class="fas fa-car-side fa-2x"></i>
+                    {% else %}
+                      <i class="fas fa-car fa-2x"></i>
+                    {% endif %}
+                  </div>
+                  <h6 class="mb-1">{{ vehicle_type }}</h6>
+                  <h4 class="text-primary mb-0">{{ count }}</h4>
+                  <small class="text-muted">Active Trips</small>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <!-- Grouped View -->
+          <div id="grouped-view">
+            {% if ongoing_trips_by_type %}
+              {% for vehicle_type, trips in ongoing_trips_by_type.items %}
+              <div class="vehicle-type-section mb-4">
+                <div class="d-flex align-items-center mb-3">
+                  <div class="vehicle-type-icon me-3">
+                    {% if 'Bike' in vehicle_type or 'Motorcycle' in vehicle_type %}
+                      <i class="fas fa-motorcycle text-primary fa-lg"></i>
+                    {% elif 'Car' in vehicle_type %}
+                      <i class="fas fa-car text-success fa-lg"></i>
+                    {% elif 'Truck' in vehicle_type %}
+                      <i class="fas fa-truck text-warning fa-lg"></i>
+                    {% elif 'Van' in vehicle_type %}
+                      <i class="fas fa-van text-info fa-lg"></i>
+                    {% elif 'SUV' in vehicle_type %}
+                      <i class="fas fa-car-side text-secondary fa-lg"></i>
+                    {% else %}
+                      <i class="fas fa-car text-primary fa-lg"></i>
+                    {% endif %}
+                  </div>
+                  <h6 class="mb-0">{{ vehicle_type }} <span class="badge bg-primary">{{ trips|length }}</span></h6>
+                </div>
+                
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Vehicle</th>
+                        <th>Driver</th>
+                        <th>Started</th>
+                        <th>From → To</th>
+                        <th>Purpose</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for trip in trips %}
+                      <tr>
+                        <td>
+                          <strong>{{ trip.vehicle.license_plate }}</strong><br>
+                          <small class="text-muted">{{ trip.vehicle.make }} {{ trip.vehicle.model }}</small>
+                        </td>
+                        <td>{{ trip.driver.get_full_name }}</td>
+                        <td>{{ trip.start_time|date:"M d, H:i" }}</td>
+                        <td>
+                          <span class="text-truncate d-inline-block" style="max-width: 150px;" title="{{ trip.origin }} → {{ trip.destination|default:'TBD' }}">
+                            {{ trip.origin|truncatechars:15 }} → {{ trip.destination|default:'TBD'|truncatechars:15 }}
+                          </span>
+                        </td>
+                        <td>{{ trip.purpose|truncatechars:20 }}</td>
+                        <td>
+                          <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary view-location" data-trip-id="{{ trip.id }}" title="View Location">
+                              <i class="fas fa-map-marker-alt"></i>
+                            </button>
+                            <a href="{% url 'trip_detail' trip.id %}" class="btn btn-outline-info" title="Trip Details">
+                              <i class="fas fa-info-circle"></i>
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="text-center py-5">
+                <i class="fas fa-route fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Ongoing Trips</h5>
+                <p class="text-muted">All vehicles are currently available.</p>
+              </div>
+            {% endif %}
+          </div>
+
+          <!-- List View (Hidden by default) -->
+          <div id="list-view" style="display: none;">
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Vehicle</th>
+                    <th>Driver</th>
+                    <th>Started</th>
+                    <th>From → To</th>
+                    <th>Purpose</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for trip in ongoing_trips %}
+                  <tr>
+                    <td>
+                      <span class="badge badge-vehicle-type" data-type="{{ trip.vehicle.vehicle_type.name }}">
+                        {{ trip.vehicle.vehicle_type.name }}
+                      </span>
+                    </td>
+                    <td>
+                      <strong>{{ trip.vehicle.license_plate }}</strong><br>
+                      <small class="text-muted">{{ trip.vehicle.make }} {{ trip.vehicle.model }}</small>
+                    </td>
+                    <td>{{ trip.driver.get_full_name }}</td>
+                    <td>{{ trip.start_time|date:"M d, H:i" }}</td>
+                    <td>
+                      <span class="text-truncate d-inline-block" style="max-width: 150px;">
+                        {{ trip.origin|truncatechars:15 }} → {{ trip.destination|default:'TBD'|truncatechars:15 }}
+                      </span>
+                    </td>
+                    <td>{{ trip.purpose|truncatechars:20 }}</td>
+                    <td>
+                      <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary view-location" data-trip-id="{{ trip.id }}">
+                          <i class="fas fa-map-marker-alt"></i>
+                        </button>
+                        <a href="{% url 'trip_detail' trip.id %}" class="btn btn-outline-info">
+                          <i class="fas fa-info-circle"></i>
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr>
+                    <td colspan="7" class="text-center">No ongoing trips</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="row">
+    <!-- Recent Accidents -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Recent Accidents</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Vehicle</th>
+                  <th>Driver</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for accident in recent_accidents %}
+                <tr>
+                  <td>{{ accident.date_time|date:"M d, Y" }}</td>
+                  <td>{{ accident.vehicle.license_plate }}</td>
+                  <td>{{ accident.driver.get_full_name }}</td>
+                  <td>
+                    <span class="badge bg-{{ accident.status|status_color }}">
+                      {{ accident.get_status_display }}
+                    </span>
+                  </td>
+                  <td>
+                    <a href="{% url 'accident_detail' accident.id %}" class="btn btn-sm btn-info">
+                      <i class="fas fa-info-circle"></i>
+                    </a>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="5" class="text-center">No recent accidents</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="row">
+    <!-- Driver Performance -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Top Drivers This Month</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Driver</th>
+                  <th>Total Distance</th>
+                  <th>Duration</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for driver in driver_performance %}
+                <tr>
+                  <td>{{ driver.driver__first_name }} {{ driver.driver__last_name }}</td>
+                  <td>{{ driver.total_distance }} km</td>
+                  <td>{{ driver.formatted_duration }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="2" class="text-center">No data available</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Expiring Documents -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Expiring Documents</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Document</th>
+                  <th>Vehicle</th>
+                  <th>Expiry Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for document in expiring_documents %}
+                <tr>
+                  <td>{{ document.document_type.name }}</td>
+                  <td>{{ document.vehicle.license_plate }}</td>
+                  <td>
+                    <span class="{% if document.is_expired %}text-danger{% endif %}">
+                      {{ document.expiry_date|date:"M d, Y" }}
+                    </span>
+                  </td>
+                  <td>
+                    <a href="{% url 'document_detail' document.id %}" class="btn btn-sm btn-info">
+                      <i class="fas fa-info-circle"></i>
+                    </a>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="4" class="text-center">No expiring documents</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Vehicle Manager Dashboard -->
+  {% if request.user.user_type == 'vehicle_manager' %}
+  <div class="row">
+    <!-- Maintenance Status Chart -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Maintenance Status</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="maintenanceStatusChart" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Vehicle Availability Chart -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Vehicle Availability</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="vehicleAvailabilityChart" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="row">
+    <!-- Fuel Efficiency by Vehicle (NEW) -->
+    <div class="col-lg-12">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Fuel Efficiency by Vehicle</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="fuelEfficiencyChart" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Enhanced Ongoing Trips Section for Vehicle Manager -->
+  <div class="row">
+    <div class="col-lg-12">
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">
+            <i class="fas fa-route me-2"></i>Ongoing Trips by Vehicle Type
+          </h5>
+          <div class="trip-type-toggle">
+            <button class="btn btn-sm btn-outline-primary active" data-view="grouped-vm">
+              <i class="fas fa-layer-group me-1"></i>Grouped
+            </button>
+            <button class="btn btn-sm btn-outline-primary" data-view="list-vm">
+              <i class="fas fa-list me-1"></i>List
+            </button>
+          </div>
+        </div>
+        <div class="card-body">
+          <!-- Summary Cards -->
+          {% if ongoing_trips_summary %}
+          <div class="row mb-4">
+            {% for vehicle_type, count in ongoing_trips_summary.items %}
+            <div class="col-lg-3 col-md-6 mb-3">
+              <div class="card bg-light border-0">
+                <div class="card-body text-center">
+                  <div class="text-primary mb-2">
+                    {% if 'Bike' in vehicle_type or 'Motorcycle' in vehicle_type %}
+                      <i class="fas fa-motorcycle fa-2x"></i>
+                    {% elif 'Car' in vehicle_type %}
+                      <i class="fas fa-car fa-2x"></i>
+                    {% elif 'Truck' in vehicle_type %}
+                      <i class="fas fa-truck fa-2x"></i>
+                    {% elif 'Van' in vehicle_type %}
+                      <i class="fas fa-van fa-2x"></i>
+                    {% elif 'SUV' in vehicle_type %}
+                      <i class="fas fa-car-side fa-2x"></i>
+                    {% else %}
+                      <i class="fas fa-car fa-2x"></i>
+                    {% endif %}
+                  </div>
+                  <h6 class="mb-1">{{ vehicle_type }}</h6>
+                  <h4 class="text-primary mb-0">{{ count }}</h4>
+                  <small class="text-muted">Active Trips</small>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+
+          <!-- Grouped View -->
+          <div id="grouped-view-vm">
+            {% if ongoing_trips_by_type %}
+              {% for vehicle_type, trips in ongoing_trips_by_type.items %}
+              <div class="vehicle-type-section mb-4">
+                <div class="d-flex align-items-center mb-3">
+                  <div class="vehicle-type-icon me-3">
+                    {% if 'Bike' in vehicle_type or 'Motorcycle' in vehicle_type %}
+                      <i class="fas fa-motorcycle text-primary fa-lg"></i>
+                    {% elif 'Car' in vehicle_type %}
+                      <i class="fas fa-car text-success fa-lg"></i>
+                    {% elif 'Truck' in vehicle_type %}
+                      <i class="fas fa-truck text-warning fa-lg"></i>
+                    {% elif 'Van' in vehicle_type %}
+                      <i class="fas fa-van text-info fa-lg"></i>
+                    {% elif 'SUV' in vehicle_type %}
+                      <i class="fas fa-car-side text-secondary fa-lg"></i>
+                    {% else %}
+                      <i class="fas fa-car text-primary fa-lg"></i>
+                    {% endif %}
+                  </div>
+                  <h6 class="mb-0">{{ vehicle_type }} <span class="badge bg-primary">{{ trips|length }}</span></h6>
+                </div>
+                
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Vehicle</th>
+                        <th>Driver</th>
+                        <th>Started</th>
+                        <th>From → To</th>
+                        <th>Purpose</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {% for trip in trips %}
+                      <tr>
+                        <td>
+                          <strong>{{ trip.vehicle.license_plate }}</strong><br>
+                          <small class="text-muted">{{ trip.vehicle.make }} {{ trip.vehicle.model }}</small>
+                        </td>
+                        <td>{{ trip.driver.get_full_name }}</td>
+                        <td>{{ trip.start_time|date:"M d, H:i" }}</td>
+                        <td>
+                          <span class="text-truncate d-inline-block" style="max-width: 150px;" title="{{ trip.origin }} → {{ trip.destination|default:'TBD' }}">
+                            {{ trip.origin|truncatechars:15 }} → {{ trip.destination|default:'TBD'|truncatechars:15 }}
+                          </span>
+                        </td>
+                        <td>{{ trip.purpose|truncatechars:20 }}</td>
+                        <td>
+                          <div class="btn-group btn-group-sm">
+                            <button class="btn btn-outline-primary view-location" data-trip-id="{{ trip.id }}" title="View Location">
+                              <i class="fas fa-map-marker-alt"></i>
+                            </button>
+                            <a href="{% url 'trip_detail' trip.id %}" class="btn btn-outline-info" title="Trip Details">
+                              <i class="fas fa-info-circle"></i>
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              {% endfor %}
+            {% else %}
+              <div class="text-center py-5">
+                <i class="fas fa-route fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">No Ongoing Trips</h5>
+                <p class="text-muted">All vehicles are currently available.</p>
+              </div>
+            {% endif %}
+          </div>
+
+          <!-- List View (Hidden by default) -->
+          <div id="list-view-vm" style="display: none;">
+            <div class="table-responsive">
+              <table class="table table-hover">
+                <thead>
+                  <tr>
+                    <th>Type</th>
+                    <th>Vehicle</th>
+                    <th>Driver</th>
+                    <th>Started</th>
+                    <th>From → To</th>
+                    <th>Purpose</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for trip in ongoing_trips %}
+                  <tr>
+                    <td>
+                      <span class="badge badge-vehicle-type" data-type="{{ trip.vehicle.vehicle_type.name }}">
+                        {{ trip.vehicle.vehicle_type.name }}
+                      </span>
+                    </td>
+                    <td>
+                      <strong>{{ trip.vehicle.license_plate }}</strong><br>
+                      <small class="text-muted">{{ trip.vehicle.make }} {{ trip.vehicle.model }}</small>
+                    </td>
+                    <td>{{ trip.driver.get_full_name }}</td>
+                    <td>{{ trip.start_time|date:"M d, H:i" }}</td>
+                    <td>
+                      <span class="text-truncate d-inline-block" style="max-width: 150px;">
+                        {{ trip.origin|truncatechars:15 }} → {{ trip.destination|default:'TBD'|truncatechars:15 }}
+                      </span>
+                    </td>
+                    <td>{{ trip.purpose|truncatechars:20 }}</td>
+                    <td>
+                      <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-primary view-location" data-trip-id="{{ trip.id }}">
+                          <i class="fas fa-map-marker-alt"></i>
+                        </button>
+                        <a href="{% url 'trip_detail' trip.id %}" class="btn btn-outline-info">
+                          <i class="fas fa-info-circle"></i>
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                  {% empty %}
+                  <tr>
+                    <td colspan="7" class="text-center">No ongoing trips</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="row">
+    <!-- Pending Maintenance -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Pending Maintenance</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Vehicle</th>
+                  <th>Type</th>
+                  <th>Scheduled Date</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for maintenance in pending_maintenance %}
+                <tr>
+                  <td>{{ maintenance.vehicle.license_plate }}</td>
+                  <td>{{ maintenance.maintenance_type.name }}</td>
+                  <td>{{ maintenance.scheduled_date|date:"M d, Y" }}</td>
+                  <td>
+                    <a href="{% url 'maintenance_detail' maintenance.id %}" class="btn btn-sm btn-info">
+                      <i class="fas fa-info-circle"></i>
+                    </a>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="4" class="text-center">No pending maintenance</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Fuel Efficiency -->
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Fuel Efficiency Details</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Vehicle</th>
+                  <th>Efficiency (km/L)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for item in fuel_efficiency %}
+                <tr>
+                  <td>{{ item.vehicle.license_plate }} ({{ item.vehicle.make }} {{ item.vehicle.model }})</td>
+                  <td>{{ item.efficiency }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="2" class="text-center">No data available</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Driver Dashboard -->
+  {% if request.user.user_type == 'driver' or request.user.user_type == 'company_vehicle_staff' %}
+  <div class="row">
+    <!-- Ongoing Trips -->
+    <div class="col-lg-12">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Your Current Trip</h5>
+        </div>
+        <div class="card-body">
+          {% if ongoing_trips %}
+            {% for trip in ongoing_trips %}
+            <div class="active-trip-card">
+              <div class="row">
+                <div class="col-md-6">
+                  <h4>{{ trip.vehicle.make }} {{ trip.vehicle.model }} ({{ trip.vehicle.license_plate }})</h4>
+                  <p><strong>Started:</strong> {{ trip.start_time|date:"M d, Y H:i" }}</p>
+                  <p><strong>Purpose:</strong> {{ trip.purpose }}</p>
+                  <p><strong>Start Odometer:</strong> {{ trip.start_odometer }} km</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                  {% with bundle_sor=trip.sor_entry.first %}
+                    {% if bundle_sor and bundle_sor.bundle_id %}
+                      <a href="{% url 'sor_bundle_progress' bundle_sor.bundle_id %}" class="btn btn-success mb-2" title="View Bundle SOR stops">
+                        <i class="fas fa-layer-group"></i> Bundle SOR
+                      </a>
+                    {% else %}
+                      <a href="{% url 'end_trip' trip.id %}" class="btn btn-warning mb-2">
+                        <i class="fas fa-flag-checkered"></i> End Trip
+                      </a>
+                    {% endif %}
+                  {% endwith %}
+                  <a href="{% url 'trip_detail' trip.id %}" class="btn btn-info mb-2">
+                    <i class="fas fa-info-circle"></i> Details
+                  </a>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+          {% else %}
+            <div class="text-center py-5">
+              <h4>No active trips</h4>
+              <a href="{% url 'start_trip' %}" class="btn btn-primary mt-3">
+                <i class="fas fa-play"></i> Start New Trip
+              </a>
+            </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Driver Activity Charts -->
+  <div class="row">
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Your Monthly Trip Distance</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="distanceChart" height="250"></canvas>
+        </div>
+      </div>
+    </div>
+    
+    <div class="col-lg-6">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Your Driving Hours</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="hoursChart" height="250"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Daily/Weekly Activity -->
+  <div class="row">
+    <div class="col-lg-12">
+      <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h5 class="card-title mb-0">Daily Activity Breakdown</h5>
+          <div class="btn-group btn-group-sm">
+            <button type="button" class="btn btn-primary active" id="dailyViewBtn">Daily</button>
+            <button type="button" class="btn btn-outline-primary" id="weeklyViewBtn">Weekly</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="dailyView">
+            <canvas id="dailyActivityChart" height="250"></canvas>
+          </div>
+          <div id="weeklyView" style="display:none;">
+            <canvas id="weeklyActivityChart" height="250"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="row">
+    <!-- Recent Trips -->
+    <div class="col-lg-8">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Your Recent Trips</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>DATE</th>
+                  <th>VEHICLE</th>
+                  <th>DISTANCE</th>
+                  <th>DURATION</th>
+                  <th>STATUS</th>
+                  <th>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for trip in recent_trips %}
+                <tr>
+                  <td>{{ trip.start_time|date:"M d, Y" }}</td>
+                  <td>{{ trip.vehicle.license_plate }}</td>
+                  <td>
+                    {% if trip.distance is not None %}
+                      {{ trip.distance }} km
+                    {% else %}
+                      In progress
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if trip.formatted_duration %}
+                      {{ trip.formatted_duration }}
+                    {% else %}
+                      In progress
+                    {% endif %}
+                  </td>
+                  <td>
+                    <span class="badge bg-{{ trip.status|status_color }}">
+                      {{ trip.get_status_display }}
+                    </span>
+                  </td>
+                  <td>
+                    <a href="{% url 'trip_detail' trip.id %}" class="btn btn-sm btn-info">
+                      <i class="fas fa-info-circle"></i>
+                    </a>
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="6" class="text-center">No recent trips</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Recent Fuel Transactions -->
+    <div class="col-lg-4">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title">Your Recent Fuel Transactions</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>DATE</th>
+                  <th>VEHICLE</th>
+                  <th>AMOUNT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for fuel in recent_fuel %}
+                <tr>
+                  <td>{{ fuel.date|date:"M d, Y" }}</td>
+                  <td>{{ fuel.vehicle.license_plate }}</td>
+                  <td>{{ fuel.quantity }} L</td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="3" class="text-center">No recent fuel transactions</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Personal Vehicle Staff Dashboard -->
+  {% if request.user.user_type == 'personal_vehicle_staff' %}
+  {% if has_vehicle %}
+  <div class="row">
+    <!-- Vehicle Info Cards -->
+    <div class="col-lg-4">
+      <div class="card mb-4 border-primary">
+        <div class="card-header bg-primary text-white">
+          <h5 class="card-title mb-0"><i class="fas fa-car me-2"></i>My Vehicles ({{ total_personal_vehicles }})</h5>
+        </div>
+        <div class="card-body">
+          {% for vehicle in personal_vehicles %}
+          <div class="mb-3 {% if not forloop.last %}border-bottom pb-3{% endif %}">
+            <h5>{{ vehicle.make }} {{ vehicle.model }}</h5>
+            <p class="mb-1"><strong>License Plate:</strong> {{ vehicle.license_plate }}</p>
+            <p class="mb-1"><strong>Year:</strong> {{ vehicle.year }}</p>
+            <p class="mb-1"><strong>Current Odometer:</strong> {{ vehicle.current_odometer }} km</p>
+            <p class="mb-1"><strong>Reimbursement Rate:</strong> 
+              {% if vehicle.reimbursement_rate_per_km %}
+                <span class="badge bg-success">₹{{ vehicle.reimbursement_rate_per_km|floatformat:2 }}/km</span>
+              {% else %}
+                <span class="badge bg-warning">Not set</span>
+              {% endif %}
+            </p>
+          </div>
+          {% endfor %}
+          <hr>
+          <div class="d-grid gap-2">
+            <a href="{% url 'vehicle_list' %}" class="btn btn-primary">
+              <i class="fas fa-list me-1"></i>View All Vehicles
+            </a>
+            <a href="{% url 'start_trip' %}" class="btn btn-success">
+              <i class="fas fa-play me-1"></i>Start New Trip
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Current Trip & Quick Stats -->
+    <div class="col-lg-8">
+      <!-- Ongoing Trips -->
+      {% if ongoing_trips %}
+      <div class="card mb-4 border-warning">
+        <div class="card-header bg-warning">
+          <h5 class="card-title mb-0"><i class="fas fa-route me-2"></i>Current Trip</h5>
+        </div>
+        <div class="card-body">
+          {% for trip in ongoing_trips %}
+          <div class="active-trip-card">
+            <div class="row">
+              <div class="col-md-6">
+                <p class="mb-2"><strong>Started:</strong> {{ trip.start_time|date:"M d, Y H:i" }}</p>
+                <p class="mb-2"><strong>Origin:</strong> {{ trip.origin }}</p>
+                <p class="mb-2"><strong>Purpose:</strong> {{ trip.purpose }}</p>
+                <p class="mb-2"><strong>Start Odometer:</strong> {{ trip.start_odometer }} km</p>
+                {% if trip.is_commercial_staff_bus %}
+                <p class="mb-2">
+                  <strong>Passengers:</strong>
+                  {% if trip.passenger_count is not None %}
+                    <span class="badge bg-info">{{ trip.passenger_count }}</span>
+                  {% else %}
+                    <span class="text-muted">Not recorded</span>
+                  {% endif %}
+                </p>
+                {% endif %}
+              </div>
+              <div class="col-md-6 text-md-end">
+                {% with bundle_sor=trip.sor_entry.first %}
+                  {% if bundle_sor and bundle_sor.bundle_id %}
+                    <a href="{% url 'sor_bundle_progress' bundle_sor.bundle_id %}" class="btn btn-success btn-lg mb-2" title="View Bundle SOR stops">
+                      <i class="fas fa-layer-group"></i> Bundle SOR
+                    </a>
+                    <br>
+                  {% else %}
+                    <a href="{% url 'end_trip' trip.id %}" class="btn btn-danger btn-lg mb-2">
+                      <i class="fas fa-flag-checkered"></i> End Trip
+                    </a>
+                    <br>
+                  {% endif %}
+                {% endwith %}
+                <a href="{% url 'trip_detail' trip.id %}" class="btn btn-info mb-2">
+                  <i class="fas fa-info-circle"></i> Details
+                </a>
+                {% if trip.is_commercial_staff_bus %}
+                <br>
+                <button type="button" class="btn btn-outline-info mb-2" 
+                        data-bs-toggle="modal" data-bs-target="#dashPassengerModal{{ trip.pk }}">
+                  <i class="fas fa-users me-1"></i>Update Passengers
+                </button>
+                {% endif %}
+              </div>
+            </div>
+          </div>
+          {% if trip.is_commercial_staff_bus %}
+          <!-- Passenger Count Modal -->
+          <div class="modal fade" id="dashPassengerModal{{ trip.pk }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-sm modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header bg-info text-white py-2">
+                  <h6 class="modal-title mb-0">
+                    <i class="fas fa-users me-1"></i>Passenger Count
+                  </h6>
+                  <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="post" action="{% url 'update_passenger_count' trip.pk %}">
+                  {% csrf_token %}
+                  <div class="modal-body">
+                    <p class="small text-muted mb-2">{{ trip.vehicle.license_plate }} — {{ trip.vehicle.vehicle_type.name }}</p>
+                    {% if trip.passenger_count is not None %}
+                    <p class="mb-2">Current: <strong>{{ trip.passenger_count }}</strong></p>
+                    {% endif %}
+                    <label for="dash_passenger_count_{{ trip.pk }}" class="form-label">Number of Passengers</label>
+                    <input type="number" name="passenger_count" id="dash_passenger_count_{{ trip.pk }}"
+                           class="form-control" min="0"
+                           value="{{ trip.passenger_count|default_if_none:'' }}"
+                           placeholder="Enter count">
+                  </div>
+                  <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-sm btn-info">
+                      <i class="fas fa-save me-1"></i>Update
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% else %}
+      <div class="card mb-4 border-success">
+        <div class="card-header bg-success text-white">
+          <h5 class="card-title mb-0"><i class="fas fa-check-circle me-2"></i>No Active Trip</h5>
+        </div>
+        <div class="card-body text-center py-4">
+          <p class="mb-3">You don't have any ongoing trips.</p>
+          <a href="{% url 'start_trip' %}" class="btn btn-success btn-lg">
+            <i class="fas fa-play me-1"></i>Start a New Trip
+          </a>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  
+  <!-- Monthly Distance & Reimbursement Chart -->
+  <div class="row">
+    <div class="col-lg-12">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title"><i class="fas fa-chart-line me-2"></i>Monthly Distance & Reimbursement (Last 6 Months)</h5>
+        </div>
+        <div class="card-body">
+          <canvas id="personalVehicleChart" height="80"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Recent Trips -->
+  <div class="row">
+    <div class="col-lg-12">
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title"><i class="fas fa-list me-2"></i>Your Recent Trips</h5>
+        </div>
+        <div class="card-body">
+          <div class="table-responsive">
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>DATE</th>
+                  <th>ORIGIN</th>
+                  <th>DESTINATION</th>
+                  <th>DISTANCE</th>
+                  <th>REIMBURSEMENT</th>
+                  <th>STATUS</th>
+                  <th>APPROVAL</th>
+                  <th>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for trip in recent_trips %}
+                <tr>
+                  <td>{{ trip.start_time|date:"M d, Y" }}</td>
+                  <td>{{ trip.origin|truncatewords:5 }}</td>
+                  <td>
+                    {% if trip.destination %}
+                      {{ trip.destination|truncatewords:5 }}
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if trip.distance is not None %}
+                      {{ trip.distance }} km
+                    {% else %}
+                      In progress
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if trip.reimbursement %}
+                      <span class="text-success fw-bold">₹{{ trip.reimbursement|floatformat:2 }}</span>
+                    {% else %}
+                      —
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if trip.status == 'completed' %}
+                      <span class="badge bg-success">{{ trip.get_status_display }}</span>
+                    {% elif trip.status == 'ongoing' %}
+                      <span class="badge bg-warning">{{ trip.get_status_display }}</span>
+                    {% else %}
+                      <span class="badge bg-secondary">{{ trip.get_status_display }}</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if trip.approval_status == 'pending' %}
+                      <span class="badge bg-warning text-dark" title="Awaiting {{ trip.approval_manager.get_full_name }}'s approval"><i class="fas fa-hourglass-half me-1"></i>Pending</span>
+                    {% elif trip.approval_status == 'approved' %}
+                      <span class="badge bg-success" title="Approved by {{ trip.approval_action_by.get_full_name }}"><i class="fas fa-check me-1"></i>Approved</span>
+                    {% elif trip.approval_status == 'rejected' %}
+                      <span class="badge bg-danger" title="Rejected: {{ trip.approval_remarks }}"><i class="fas fa-times me-1"></i>Rejected</span>
+                    {% else %}
+                      <span class="text-muted small">—</span>
+                    {% endif %}
+                  </td>
+                  <td>
+                    <a href="{% url 'trip_detail' trip.id %}" class="btn btn-sm btn-info">
+                      <i class="fas fa-info-circle"></i>
+                    </a>
+                    {% if trip.status == 'ongoing' %}
+                    <a href="{% url 'end_trip' trip.id %}" class="btn btn-sm btn-warning">
+                      <i class="fas fa-flag-checkered"></i>
+                    </a>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="8" class="text-center">No trips yet. <a href="{% url 'start_trip' %}">Start your first trip</a></td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="text-center mt-3">
+            <a href="{% url 'driver_trips' %}" class="btn btn-primary">
+              <i class="fas fa-list-alt me-1"></i>View All Trips
+            </a>
+            <a href="{% url 'my_reimbursement' %}" class="btn btn-success">
+              <i class="fas fa-dollar-sign me-1"></i>View Full Reimbursement Report
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <!-- No Vehicle Registered -->
+  <div class="row">
+    <div class="col-12">
+      <div class="alert alert-warning">
+        <h4><i class="fas fa-exclamation-triangle me-2"></i>No Vehicle Registered</h4>
+        <p>You don't have a personal vehicle registered in the system. Please contact your administrator to register your vehicle for reimbursement tracking.</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<!-- Location Map Modal -->
+<div class="modal fade" id="locationMapModal" tabindex="-1" aria-labelledby="locationMapModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="locationMapModalLabel">Vehicle Location</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="locationMap" style="height: 400px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Chart colors
+  const chartColors = {
+    blue: 'rgba(54, 162, 235, 0.7)',
+    blueLight: 'rgba(54, 162, 235, 0.2)',
+    blueBorder: 'rgba(54, 162, 235, 1)',
+    green: 'rgba(75, 192, 192, 0.7)',
+    greenLight: 'rgba(75, 192, 192, 0.2)',
+    greenBorder: 'rgba(75, 192, 192, 1)',
+    red: 'rgba(255, 99, 132, 0.7)',
+    redBorder: 'rgba(255, 99, 132, 1)',
+    yellow: 'rgba(255, 206, 86, 0.7)',
+    yellowBorder: 'rgba(255, 206, 86, 1)',
+    orange: 'rgba(255, 159, 64, 0.7)',
+    orangeBorder: 'rgba(255, 159, 64, 1)',
+    purple: 'rgba(153, 102, 255, 0.7)',
+    purpleBorder: 'rgba(153, 102, 255, 1)',
+    gray: 'rgba(201, 203, 207, 0.7)',
+    grayBorder: 'rgba(201, 203, 207, 1)'
+  };
+  
+  // Chart Options
+  const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: {
+          font: {
+            size: 11
+          }
+        }
+      },
+      tooltip: {
+        mode: 'index',
+        intersect: false,
+      }
+    },
+    scales: {
+      y: {
+        beginAtZero: true
+      }
+    }
+  };
+  
+  // Admin & Manager Dashboard Charts
+  {% if request.user.user_type == 'admin' or request.user.user_type == 'manager' %}
+  // Vehicle Status Chart
+  try {
+    const vehicleStatusCtx = document.getElementById('vehicleStatusChart').getContext('2d');
+    const vehicleStatusData = {
+      labels: [{% for item in vehicle_status %}'{{ item.status|capfirst }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        data: [{% for item in vehicle_status %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: [
+          chartColors.green,
+          chartColors.blue,
+          chartColors.orange,
+          chartColors.gray
+        ],
+        borderWidth: 1
+      }]
+    };
+    
+    const vehicleStatusChart = new Chart(vehicleStatusCtx, {
+      type: 'doughnut',
+      data: vehicleStatusData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              boxWidth: 12,
+              font: {
+                size: 10
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating vehicle status chart:', e);
+  }
+  
+  // Vehicle Types Chart
+  try {
+    const vehicleTypesCtx = document.getElementById('vehicleTypesChart').getContext('2d');
+    const vehicleTypesData = {
+      labels: [{% for item in vehicle_types %}'{{ item.vehicle_type__name }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        data: [{% for item in vehicle_types %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: [
+          chartColors.red,
+          chartColors.blue,
+          chartColors.yellow,
+          chartColors.green,
+          chartColors.purple
+        ],
+        borderWidth: 1
+      }]
+    };
+    
+    const vehicleTypesChart = new Chart(vehicleTypesCtx, {
+      type: 'pie',
+      data: vehicleTypesData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              boxWidth: 12,
+              font: {
+                size: 10
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating vehicle types chart:', e);
+  }
+  
+  // Fuel Expenses Charts
+  try {
+    // Monthly Fuel Expenses Chart
+    const fuelExpensesMonthlyCtx = document.getElementById('fuelExpensesMonthlyChart').getContext('2d');
+    const fuelExpensesMonthlyData = {
+      labels: [{% for item in monthly_fuel %}'{{ item.month_name }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Monthly Fuel Expenses',
+        data: [{% for item in monthly_fuel %}{{ item.total }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: chartColors.blue,
+        borderColor: chartColors.blueBorder,
+        borderWidth: 2
+      }]
+    };
+    
+    const fuelExpensesMonthlyChart = new Chart(fuelExpensesMonthlyCtx, {
+      type: 'bar',
+      data: fuelExpensesMonthlyData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Amount',
+              font: {
+                size: 12
+              }
+            },
+            ticks: {
+              font: {
+                size: 11
+              }
+            }
+          },
+          x: {
+            title: {
+              display: true,
+              text: 'Month',
+              font: {
+                size: 12
+              }
+            },
+            ticks: {
+              font: {
+                size: 11
+              }
+            }
+          }
+        }
+      }
+    });
+    
+    // Weekly Fuel Expenses Chart
+    const fuelExpensesWeeklyCtx = document.getElementById('fuelExpensesWeeklyChart').getContext('2d');
+    const fuelExpensesWeeklyData = {
+      labels: [{% for item in weekly_fuel %}'{{ item.week }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Weekly Fuel Expenses',
+        data: [{% for item in weekly_fuel %}{{ item.total }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: chartColors.green,
+        borderColor: chartColors.greenBorder,
+        borderWidth: 2
+      }]
+    };
+    
+    const fuelExpensesWeeklyChart = new Chart(fuelExpensesWeeklyCtx, {
+      type: 'bar',
+      data: fuelExpensesWeeklyData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Amount',
+              font: {
+                size: 12
+              }
+            },
+            ticks: {
+              font: {
+                size: 11
+              }
+            }
+          },
+          x: {
+            title: {
+              display: true,
+              text: 'Week',
+              font: {
+                size: 12
+              }
+            },
+            ticks: {
+              font: {
+                size: 11
+              },
+              maxRotation: 45,
+              minRotation: 30
+            }
+          }
+        }
+      }
+    });
+    
+    // Daily Fuel Expenses Chart
+    const fuelExpensesDailyCtx = document.getElementById('fuelExpensesDailyChart').getContext('2d');
+    const fuelExpensesDailyData = {
+      labels: [{% for item in daily_fuel %}'{{ item.date }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        label: 'Daily Fuel Expenses',
+        data: [{% for item in daily_fuel %}{{ item.total }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: chartColors.orange,
+        borderColor: chartColors.orangeBorder,
+        borderWidth: 2
+      }]
+    };
+    
+    const fuelExpensesDailyChart = new Chart(fuelExpensesDailyCtx, {
+      type: 'bar',
+      data: fuelExpensesDailyData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Amount',
+              font: {
+                size: 12
+              }
+            },
+            ticks: {
+              font: {
+                size: 11
+              }
+            }
+          },
+          x: {
+            title: {
+              display: true,
+              text: 'Date',
+              font: {
+                size: 12
+              }
+            },
+            ticks: {
+              font: {
+                size: 11
+              },
+              maxRotation: 45,
+              minRotation: 30
+            }
+          }
+        }
+      }
+    });
+    
+    // Toggle buttons for fuel expense views
+    const monthlyFuelBtn = document.getElementById('monthlyFuelBtn');
+    const weeklyFuelBtn = document.getElementById('weeklyFuelBtn');
+    const dailyFuelBtn = document.getElementById('dailyFuelBtn');
+    const monthlyFuelView = document.getElementById('monthlyFuelView');
+    const weeklyFuelView = document.getElementById('weeklyFuelView');
+    const dailyFuelView = document.getElementById('dailyFuelView');
+    
+    if (monthlyFuelBtn && weeklyFuelBtn && dailyFuelBtn) {
+      monthlyFuelBtn.addEventListener('click', function() {
+        monthlyFuelView.style.display = 'block';
+        weeklyFuelView.style.display = 'none';
+        dailyFuelView.style.display = 'none';
+        monthlyFuelBtn.classList.add('active');
+        weeklyFuelBtn.classList.remove('active');
+        dailyFuelBtn.classList.remove('active');
+      });
+      
+      weeklyFuelBtn.addEventListener('click', function() {
+        monthlyFuelView.style.display = 'none';
+        weeklyFuelView.style.display = 'block';
+        dailyFuelView.style.display = 'none';
+        monthlyFuelBtn.classList.remove('active');
+        weeklyFuelBtn.classList.add('active');
+        dailyFuelBtn.classList.remove('active');
+      });
+      
+      dailyFuelBtn.addEventListener('click', function() {
+        monthlyFuelView.style.display = 'none';
+        weeklyFuelView.style.display = 'none';
+        dailyFuelView.style.display = 'block';
+        monthlyFuelBtn.classList.remove('active');
+        weeklyFuelBtn.classList.remove('active');
+        dailyFuelBtn.classList.add('active');
+      });
+    }
+  } catch (e) {
+    console.error('Error creating fuel expenses charts:', e);
+  }
+  {% endif %}
+  
+  // Vehicle Manager Dashboard Charts
+  {% if request.user.user_type == 'vehicle_manager' %}
+  // Maintenance Status Chart
+  try {
+    const maintenanceStatusCtx = document.getElementById('maintenanceStatusChart').getContext('2d');
+    const maintenanceStatusData = {
+      labels: [{% for item in maintenance_summary %}'{{ item.status|capfirst }}'{% if not forloop.last %}, {% endif %}{% endfor %}],
+      datasets: [{
+        data: [{% for item in maintenance_summary %}{{ item.count }}{% if not forloop.last %}, {% endif %}{% endfor %}],
+        backgroundColor: [
+          chartColors.orange,
+          chartColors.green,
+          chartColors.blue,
+          chartColors.gray
+        ],
+        borderWidth: 1
+      }]
+    };
+    
+    const maintenanceStatusChart = new Chart(maintenanceStatusCtx, {
+      type: 'doughnut',
+      data: maintenanceStatusData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              boxWidth: 12,
+              font: {
+                size: 10
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating maintenance status chart:', e);
+  }
+  
+  // Vehicle Availability Chart
+  try {
+    const vehicleAvailabilityCtx = document.getElementById('vehicleAvailabilityChart').getContext('2d');
+    const vehicleAvailabilityData = {
+      labels: ['Available', 'Not Available'],
+      datasets: [{
+        data: [{{ available_vehicles }}, {{ unavailable_vehicles }}],
+        backgroundColor: [
+          chartColors.green,
+          chartColors.red,
+        ],
+        borderWidth: 1
+      }]
+    };
+    
+    const vehicleAvailabilityChart = new Chart(vehicleAvailabilityCtx, {
+      type: 'pie',
+      data: vehicleAvailabilityData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'right',
+            labels: {
+              boxWidth: 12,
+              font: {
+                size: 10
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating vehicle availability chart:', e);
+  }
+  
+  // Fuel Efficiency Chart
+  try {
+    const fuelEfficiencyCtx = document.getElementById('fuelEfficiencyChart').getContext('2d');
+    
+    {% if fuel_efficiency_detailed %}
+    const vehicleLabels = [{% for item in fuel_efficiency_detailed %}'{{ item.vehicle.license_plate }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const efficiencyValues = [{% for item in fuel_efficiency_detailed %}{{ item.efficiency }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    {% else %}
+    const vehicleLabels = ['No Data'];
+    const efficiencyValues = [0];
+    {% endif %}
+    
+    const fuelEfficiencyChart = new Chart(fuelEfficiencyCtx, {
+      type: 'bar',
+      data: {
+        labels: vehicleLabels,
+        datasets: [{
+          label: 'Efficiency (km/L)',
+          data: efficiencyValues,
+          backgroundColor: chartColors.green,
+          borderColor: chartColors.greenBorder,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Efficiency (km/L)',
+              font: {
+                size: 10
+              }
+            },
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          },
+          y: {
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating fuel efficiency chart:', e);
+  }
+  {% endif %}
+  
+  // Driver Dashboard Charts
+  {% if request.user.user_type == 'driver' or request.user.user_type == 'company_vehicle_staff' %}
+  // Monthly Distance Chart
+  try {
+    const distanceChartCtx = document.getElementById('distanceChart').getContext('2d');
+    
+    {% if driver_months %}
+    const months = [{% for item in driver_months %}'{{ item.month }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const distances = [{% for item in driver_months %}{{ item.distance }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    {% else %}
+    // Default data if no data available
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+    const distances = [0, 0, 0, 0, 0, 0];
+    {% endif %}
+    
+    const distanceChart = new Chart(distanceChartCtx, {
+      type: 'bar',
+      data: {
+        labels: months,
+        datasets: [{
+          label: 'Distance (km)',
+          data: distances,
+          backgroundColor: chartColors.green,
+          borderColor: chartColors.greenBorder,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        ...chartOptions,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Distance (km)',
+              font: {
+                size: 10
+              }
+            },
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          },
+          x: {
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating distance chart:', e);
+  }
+  
+  // Monthly Hours Chart
+  try {
+    const hoursChartCtx = document.getElementById('hoursChart').getContext('2d');
+    
+    {% if driver_hours %}
+    const hoursMonths = [{% for item in driver_hours %}'{{ item.month }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const hours = [{% for item in driver_hours %}{{ item.hours }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    {% else %}
+    // Default data if no data available
+    const hoursMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+    const hours = [0, 0, 0, 0, 0, 0];
+    {% endif %}
+    
+    const hoursChart = new Chart(hoursChartCtx, {
+      type: 'line',
+      data: {
+        labels: hoursMonths,
+        datasets: [{
+          label: 'Driving Hours',
+          data: hours,
+          backgroundColor: chartColors.blueLight,
+          borderColor: chartColors.blueBorder,
+          borderWidth: 2,
+          tension: 0.1,
+          fill: true
+        }]
+      },
+      options: {
+        ...chartOptions,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Hours',
+              font: {
+                size: 10
+              }
+            },
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          },
+          x: {
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating hours chart:', e);
+  }
+  
+  // Daily Activity Chart
+  try {
+    const dailyActivityCtx = document.getElementById('dailyActivityChart').getContext('2d');
+    
+    {% if driver_daily_activity %}
+    const dailyDates = [{% for item in driver_daily_activity %}'{{ item.date }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const dailyHours = [{% for item in driver_daily_activity %}{{ item.hours }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    {% else %}
+    // Default data if no data available
+    const dailyDates = ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'];
+    const dailyHours = [0, 0, 0, 0, 0, 0, 0];
+    {% endif %}
+    
+    const dailyActivityChart = new Chart(dailyActivityCtx, {
+      type: 'bar',
+      data: {
+        labels: dailyDates,
+        datasets: [{
+          label: 'Hours',
+          data: dailyHours,
+          backgroundColor: chartColors.orange,
+          borderColor: chartColors.orangeBorder,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        ...chartOptions,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Hours',
+              font: {
+                size: 10
+              }
+            },
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          },
+          x: {
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating daily activity chart:', e);
+  }
+  
+  // Weekly Activity Chart
+  try {
+    const weeklyActivityCtx = document.getElementById('weeklyActivityChart').getContext('2d');
+    
+    {% if driver_weekly_activity %}
+    const weeklyLabels = [{% for item in driver_weekly_activity %}'{{ item.week }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const weeklyHours = [{% for item in driver_weekly_activity %}{{ item.hours }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    {% else %}
+    // Default data if no data available
+    const weeklyLabels = ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6'];
+    const weeklyHours = [0, 0, 0, 0, 0, 0];
+    {% endif %}
+    
+    const weeklyActivityChart = new Chart(weeklyActivityCtx, {
+      type: 'bar',
+      data: {
+        labels: weeklyLabels,
+        datasets: [{
+          label: 'Hours',
+          data: weeklyHours,
+          backgroundColor: chartColors.blue,
+          borderColor: chartColors.blueBorder,
+          borderWidth: 1
+        }]
+      },
+      options: {
+        ...chartOptions,
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Hours',
+              font: {
+                size: 10
+              }
+            },
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          },
+          x: {
+            ticks: {
+              font: {
+                size: 9
+              }
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating weekly activity chart:', e);
+  }
+  
+  // Toggle between daily and weekly views
+  const dailyViewBtn = document.getElementById('dailyViewBtn');
+  const weeklyViewBtn = document.getElementById('weeklyViewBtn');
+  const dailyView = document.getElementById('dailyView');
+  const weeklyView = document.getElementById('weeklyView');
+  
+  if (dailyViewBtn && weeklyViewBtn) {
+    dailyViewBtn.addEventListener('click', function() {
+      dailyView.style.display = 'block';
+      weeklyView.style.display = 'none';
+      dailyViewBtn.classList.add('active');
+      weeklyViewBtn.classList.remove('active');
+    });
+    
+    weeklyViewBtn.addEventListener('click', function() {
+      dailyView.style.display = 'none';
+      weeklyView.style.display = 'block';
+      dailyViewBtn.classList.remove('active');
+      weeklyViewBtn.classList.add('active');
+    });
+  }
+  {% endif %}
+  
+  // Personal Vehicle Staff Dashboard Charts
+  {% if request.user.user_type == 'personal_vehicle_staff' and has_vehicle %}
+  try {
+    const personalVehicleChartCtx = document.getElementById('personalVehicleChart').getContext('2d');
+    
+    {% if driver_months %}
+    const pvMonths = [{% for item in driver_months %}'{{ item.month }}'{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const pvDistances = [{% for item in driver_months %}{{ item.distance }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    const pvReimbursements = [{% for item in driver_months %}{{ item.reimbursement|floatformat:2 }}{% if not forloop.last %}, {% endif %}{% endfor %}];
+    {% else %}
+    const pvMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+    const pvDistances = [0, 0, 0, 0, 0, 0];
+    const pvReimbursements = [0, 0, 0, 0, 0, 0];
+    {% endif %}
+    
+    const personalVehicleChart = new Chart(personalVehicleChartCtx, {
+      type: 'bar',
+      data: {
+        labels: pvMonths,
+        datasets: [
+          {
+            label: 'Distance (km)',
+            data: pvDistances,
+            backgroundColor: 'rgba(54, 162, 235, 0.5)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1,
+            yAxisID: 'y'
+          },
+          {
+            label: 'Reimbursement (₹)',
+            data: pvReimbursements,
+            backgroundColor: 'rgba(75, 192, 192, 0.5)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 2,
+            type: 'line',
+            tension: 0.3,
+            fill: false,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        interaction: {
+          mode: 'index',
+          intersect: false
+        },
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top'
+          },
+          title: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            type: 'linear',
+            display: true,
+            position: 'left',
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Distance (km)',
+              font: {
+                size: 12
+              }
+            }
+          },
+          y1: {
+            type: 'linear',
+            display: true,
+            position: 'right',
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: 'Reimbursement (₹)',
+              font: {
+                size: 12
+              }
+            },
+            grid: {
+              drawOnChartArea: false
+            }
+          }
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error creating personal vehicle chart:', e);
+  }
+  {% endif %}
+  
+  // Location Map Functionality - Using Leaflet (no API key required)
+  let map = null;
+  let currentMarkers = [];
+  let currentPolyline = null;
+  const viewLocationButtons = document.querySelectorAll('.view-location');
+  const locationMapModal = document.getElementById('locationMapModal');
+  
+  // Clear all markers and polylines from the map
+  function clearMapElements() {
+    if (!map) return;
+    
+    // Remove all markers
+    currentMarkers.forEach(marker => {
+      map.removeLayer(marker);
+    });
+    currentMarkers = [];
+    
+    // Remove polyline
+    if (currentPolyline) {
+      map.removeLayer(currentPolyline);
+      currentPolyline = null;
+    }
+  }
+  
+  if (viewLocationButtons.length > 0 && locationMapModal) {
+    viewLocationButtons.forEach(button => {
+      button.addEventListener('click', async function() {
+        const tripId = this.dataset.tripId;
+        
+        try {
+          // Initialize map if not already initialized
+          const mapElement = document.getElementById('locationMap');
+          mapElement.innerHTML = ''; // Clear any previous content
+          
+          if (!map) {
+            map = L.map('locationMap').setView([0, 0], 13);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+              attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+              maxZoom: 19
+            }).addTo(map);
+          }
+          
+          // Show loading indicator
+          mapElement.style.opacity = '0.5';
+          
+          // Fetch trip location data using the new API endpoint
+          const response = await fetch(`/trips/api/gps/locations/${tripId}/`);
+          
+          if (!response.ok) {
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          
+          // Clear existing markers and polylines
+          clearMapElements();
+          
+          if (data.length > 0) {
+            const latestLocation = data[data.length - 1];
+            const position = [latestLocation.latitude, latestLocation.longitude];
+            
+            // Center map on the latest location
+            map.setView(position, 13);
+            
+            // Add marker for the latest location (red)
+            const redIcon = L.divIcon({
+              className: 'custom-marker',
+              html: '<div style="background-color: #dc3545; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>',
+              iconSize: [15, 15],
+              iconAnchor: [7, 7]
+            });
+            
+            const latestMarker = L.marker(position, { icon: redIcon }).addTo(map);
+            latestMarker.bindPopup(`
+              <div>
+                <strong>Latest Location</strong><br>
+                Time: ${new Date(latestLocation.timestamp).toLocaleString()}<br>
+                ${latestLocation.speed ? `Speed: ${(latestLocation.speed * 3.6).toFixed(1)} km/h` : ''}
+              </div>
+            `).openPopup();
+            currentMarkers.push(latestMarker);
+            
+            // Add start location marker if there are multiple points (green)
+            if (data.length > 1) {
+              const startLocation = data[0];
+              const startPosition = [startLocation.latitude, startLocation.longitude];
+              
+              const greenIcon = L.divIcon({
+                className: 'custom-marker',
+                html: '<div style="background-color: #28a745; width: 15px; height: 15px; border-radius: 50%; border: 2px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3);"></div>',
+                iconSize: [15, 15],
+                iconAnchor: [7, 7]
+              });
+              
+              const startMarker = L.marker(startPosition, { icon: greenIcon }).addTo(map);
+              startMarker.bindPopup(`
+                <div>
+                  <strong>Trip Start</strong><br>
+                  Time: ${new Date(startLocation.timestamp).toLocaleString()}<br>
+                  ${startLocation.speed ? `Speed: ${(startLocation.speed * 3.6).toFixed(1)} km/h` : ''}
+                </div>
+              `);
+              currentMarkers.push(startMarker);
+            }
+            
+            // Create polyline for the trip path
+            const tripPath = data.map(log => [log.latitude, log.longitude]);
+            
+            currentPolyline = L.polyline(tripPath, {
+              color: '#2563EB',
+              weight: 3,
+              opacity: 1
+            }).addTo(map);
+            
+            // Fit map to show all points
+            if (tripPath.length > 1) {
+              map.fitBounds(currentPolyline.getBounds(), { padding: [50, 50] });
+            }
+            
+          } else {
+            // No location data available
+            map.setView([0, 0], 2);
+            
+            const noDataPopup = L.popup()
+              .setLatLng([0, 0])
+              .setContent('<div style="color: #dc3545;"><strong>No location data available for this trip.</strong></div>')
+              .openOn(map);
+          }
+          
+          // Remove loading indicator
+          mapElement.style.opacity = '1';
+          
+        } catch (error) {
+          console.error('Error loading map:', error);
+          
+          // Show error message in the map container
+          const mapElement = document.getElementById('locationMap');
+          if (mapElement) {
+            mapElement.style.opacity = '1';
+            mapElement.innerHTML = `
+              <div style="display: flex; align-items: center; justify-content: center; height: 100%; background-color: #f8f9fa; color: #dc3545; text-align: center; padding: 20px;">
+                <div>
+                  <i class="fas fa-exclamation-triangle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
+                  <strong>Map Loading Error</strong><br>
+                  <small>${error.message}</small><br><br>
+                  <small style="color: #6c757d;">
+                    Please check that the trip has GPS data recorded.
+                  </small>
+                </div>
+              </div>
+            `;
+          }
+        }
+        
+        // Show the modal
+        const modal = new bootstrap.Modal(locationMapModal);
+        modal.show();
+      });
+    });
+    
+    // Handle modal events
+    if (locationMapModal) {
+      locationMapModal.addEventListener('shown.bs.modal', function() {
+        // Invalidate map size when modal is shown (Leaflet needs this)
+        if (map) {
+          setTimeout(() => {
+            map.invalidateSize();
+            // Re-fit bounds if we have a polyline
+            if (currentPolyline) {
+              map.fitBounds(currentPolyline.getBounds(), { padding: [50, 50] });
+            }
+          }, 100);
+        }
+      });
+      
+      // Clear map when modal is hidden to prevent issues
+      locationMapModal.addEventListener('hidden.bs.modal', function() {
+        if (map) {
+          map.remove();
+          map = null;
+        }
+      });
+    }
+  }
+
+  // Toggle between grouped and list view for ongoing trips
+  const toggleButtons = document.querySelectorAll('.trip-type-toggle .btn');
+  const groupedView = document.getElementById('grouped-view');
+  const listView = document.getElementById('list-view');
+  
+  if (toggleButtons.length > 0 && groupedView && listView) {
+    toggleButtons.forEach(button => {
+      button.addEventListener('click', function() {
+        const view = this.dataset.view;
+        
+        // Update active button
+        toggleButtons.forEach(btn => btn.classList.remove('active'));
+        this.classList.add('active');
+        
+        // Show/hide views
+        if (view === 'grouped') {
+          groupedView.style.display = 'block';
+          listView.style.display = 'none';
+        } else {
+          groupedView.style.display = 'none';
+          listView.style.display = 'block';
+        }
+      });
+    });
+  }
+});
+</script>
+{% endblock %}

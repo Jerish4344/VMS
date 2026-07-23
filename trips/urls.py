@@ -1,0 +1,125 @@
+# Updated urls.py file
+
+from django.urls import path, include
+from . import views
+from .views import (
+    TripListView, TripDetailView, StartTripView, EndTripView, TripTrackingView,
+    ManualTripCreateView, ManualTripListView, DriverTripsView,
+    UpdatePassengerCountView,
+)
+# Import consultant rate views
+from .consultant_views import (
+    ConsultantRateListView,
+    ConsultantRateCreateView,
+    ConsultantRateUpdateView,
+    ConsultantRateDeleteView,
+    ConsultantRateDetailView,
+    ConsultantRateToggleView,
+)
+# Import GPS tracking views
+from .gps_views import (
+    record_gps_location,
+    get_trip_gps_status,
+    finalize_gps_tracking,
+    get_google_route,
+    get_trip_locations,
+    TripGoogleMapView,
+)
+
+urlpatterns = [
+    # Export URLs (should come before dynamic URLs)
+    path('export/', views.export_trips, name='export_trips'),
+    path('manual/export/', views.export_manual_trips, name='export_manual_trips'),
+    
+    # Manual Trip Entry URLs (should come before dynamic URLs)
+    path('manual/', ManualTripListView.as_view(), name='manual_trip_list'),
+    path('manual/create/', ManualTripCreateView.as_view(), name='manual_trip_create'),
+    
+    # ------------------------------------------------------------------
+    # Personal Trip Approval Flow
+    # ------------------------------------------------------------------
+    path('approvals/', views.PendingTripApprovalsView.as_view(), name='pending_trip_approvals'),
+    path('approvals/<int:pk>/approve/', views.approve_pending_trip, name='approve_pending_trip'),
+    path('approvals/<int:pk>/reject/', views.reject_pending_trip, name='reject_pending_trip'),
+    
+    # ------------------------------------------------------------------
+    # Consultant Driver Rate URLs
+    # ------------------------------------------------------------------
+    path(
+        'consultant-rates/',
+        ConsultantRateListView.as_view(),
+        name='consultant_rate_list'
+    ),
+    path(
+        'consultant-rates/create/',
+        ConsultantRateCreateView.as_view(),
+        name='consultant_rate_create'
+    ),
+    path(
+        'consultant-rates/<int:pk>/',
+        ConsultantRateDetailView.as_view(),
+        name='consultant_rate_detail'
+    ),
+    path(
+        'consultant-rates/<int:pk>/edit/',
+        ConsultantRateUpdateView.as_view(),
+        name='consultant_rate_update'
+    ),
+    path(
+        'consultant-rates/<int:pk>/delete/',
+        ConsultantRateDeleteView.as_view(),
+        name='consultant_rate_delete'
+    ),
+    path(
+        'consultant-rates/<int:pk>/toggle/',
+        ConsultantRateToggleView.as_view(),
+        name='consultant_rate_toggle'
+    ),
+
+    # Trip management URLs
+    path('', TripListView.as_view(), name='trip_list'),
+    path('staff-trips/', views.StaffTripsView.as_view(), name='staff_trips'),
+    path('live-tracking/', views.LiveTrackingView.as_view(), name='live_tracking'),
+    path('live-tracking/data/', views.LiveTrackingDataView.as_view(), name='live_tracking_data'),
+    path('<int:pk>/map/', views.TripDetailMapView.as_view(), name='trip_detail_map'),
+    path('start/', StartTripView.as_view(), name='start_trip'),
+    
+    # View trips by driver (must come before generic pk-based routes)
+    path(
+        'my-trips/',
+        DriverTripsView.as_view(),
+        name='driver_trips'
+    ),
+    path(
+        'driver/<int:driver_id>/trips/',
+        DriverTripsView.as_view(),
+        name='driver_trips_by_id'
+    ),
+    
+    # Dynamic URLs with primary keys (should come after static URLs)
+    path('<int:pk>/', TripDetailView.as_view(), name='trip_detail'),
+    path('<int:pk>/end/', EndTripView.as_view(), name='end_trip'),
+    path('<int:pk>/update-passenger-count/', UpdatePassengerCountView.as_view(), name='update_passenger_count'),
+    path('<int:pk>/track/', TripTrackingView.as_view(), name='track_trip'),
+    path('<int:pk>/edit/', views.trip_edit, name='trip_edit'),
+    path('<int:pk>/update/', views.trip_update, name='trip_update'),
+    path('<int:pk>/delete/', views.trip_delete, name='trip_delete'),
+    
+    # Commented out bulk upload and template views
+    # path('manual/bulk-upload/', BulkTripUploadView.as_view(), name='bulk_trip_upload'),
+    # path('manual/trip-sheet-template/', TripSheetTemplateView.as_view(), name='trip_sheet_template'),
+    
+    # API endpoints for AJAX requests
+    # path('api/vehicle/<int:vehicle_id>/', get_vehicle_details_api, name='vehicle_details_api'),
+    # path('api/driver/<int:driver_id>/', get_driver_details_api, name='driver_details_api'),
+
+    # GPS Tracking API endpoints
+    path('api/gps/record/', record_gps_location, name='record_gps_location'),
+    path('api/gps/status/<int:trip_id>/', get_trip_gps_status, name='get_trip_gps_status'),
+    path('api/gps/finalize/<int:trip_id>/', finalize_gps_tracking, name='finalize_gps_tracking'),
+    path('api/gps/locations/<int:trip_id>/', get_trip_locations, name='get_trip_locations'),
+    
+    # Google Maps Route API and View
+    path('api/google-route/<int:trip_id>/', get_google_route, name='get_google_route'),
+    path('<int:pk>/google-map/', TripGoogleMapView.as_view(), name='trip_google_map'),
+]

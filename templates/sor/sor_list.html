@@ -1,0 +1,444 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+{% block content %}
+<div class="container py-4">
+  <div class="row justify-content-center">
+    <div class="col-lg-11 col-md-12">
+      <div class="card shadow-sm border-0">
+        <div class="card-header bg-white border-0 pb-0 d-flex align-items-center">
+          <i class="fas fa-clipboard-list fa-lg me-2 text-primary"></i>
+          <h4 class="mb-0">SOR Entries</h4>
+          <span class="badge bg-secondary ms-2">{{ total_count }} total</span>
+          <div class="ms-auto d-flex gap-2">
+            <!-- Export Dropdown -->
+            <div class="btn-group">
+              <button type="button" class="btn btn-success btn-sm dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-download me-1"></i> Export
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                  <a class="dropdown-item" href="#" onclick="exportData('csv')">
+                    <i class="fas fa-file-csv me-2 text-success"></i> CSV
+                  </a>
+                </li>
+                <li>
+                  <a class="dropdown-item" href="#" onclick="exportData('excel')">
+                    <i class="fas fa-file-excel me-2 text-success"></i> Excel
+                  </a>
+                </li>
+                <li>
+                  <a class="dropdown-item" href="#" onclick="exportData('pdf')">
+                    <i class="fas fa-file-pdf me-2 text-danger"></i> PDF
+                  </a>
+                </li>
+              </ul>
+            </div>
+            <a href="{% url 'sor_create' %}" class="btn btn-primary btn-sm">
+              <i class="fas fa-plus-circle me-1"></i> New SOR
+            </a>
+            <a href="{% url 'sor_bundle_create' %}" class="btn btn-outline-primary btn-sm ms-1" title="Create one trip with multiple SORs">
+              <i class="fas fa-layer-group me-1"></i> New Bundle
+            </a>
+          </div>
+        </div>
+        
+        <!-- Filter Section -->
+        <div class="card-body border-bottom">
+          <form method="get" id="filter-form">
+            <!-- Hidden fields to preserve sorting -->
+            <input type="hidden" name="sort" value="{{ current_sort|default:'created_at' }}">
+            <input type="hidden" name="order" value="{{ current_order|default:'desc' }}">
+            
+            <div class="row g-2">
+              <!-- Search -->
+              <div class="col-md-3">
+                <label class="form-label small text-muted">Search</label>
+                {{ filter_form.search }}
+              </div>
+              
+              <!-- Status -->
+              <div class="col-md-2">
+                <label class="form-label small text-muted">Status</label>
+                {{ filter_form.status }}
+              </div>
+
+              <!-- Type -->
+              <div class="col-md-2">
+                <label class="form-label small text-muted">Type</label>
+                {{ filter_form.source_type }}
+              </div>
+              
+              <!-- From Location -->
+              <div class="col-md-1">
+                <label class="form-label small text-muted">From</label>
+                {{ filter_form.from_location }}
+              </div>
+              
+              <!-- To Location -->
+              <div class="col-md-1">
+                <label class="form-label small text-muted">To</label>
+                {{ filter_form.to_location }}
+              </div>
+              
+              <!-- Vehicle -->
+              <div class="col-md-2">
+                <label class="form-label small text-muted">Vehicle</label>
+                {{ filter_form.vehicle }}
+              </div>
+              
+              <!-- Driver -->
+              <div class="col-md-1">
+                <label class="form-label small text-muted">Driver</label>
+                {{ filter_form.driver }}
+              </div>
+            </div>
+            
+            <div class="row g-2 mt-2">
+              <!-- Date From -->
+              <div class="col-md-2">
+                <label class="form-label small text-muted">Date From</label>
+                {{ filter_form.date_from }}
+              </div>
+              
+              <!-- Date To -->
+              <div class="col-md-2">
+                <label class="form-label small text-muted">Date To</label>
+                {{ filter_form.date_to }}
+              </div>
+              
+              <!-- Filter Buttons -->
+              <div class="col-md-8 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary btn-sm me-2">
+                  <i class="fas fa-filter me-1"></i> Apply Filters
+                </button>
+                <a href="{% url 'sor_list' %}" class="btn btn-outline-secondary btn-sm">
+                  <i class="fas fa-times me-1"></i> Clear
+                </a>
+                {% if has_filters %}
+                  <span class="badge bg-info ms-2 align-self-center">Filters Active</span>
+                {% endif %}
+              </div>
+            </div>
+          </form>
+        </div>
+        
+        <div class="card-body">
+          <style>
+            .swipe-scroll {
+              overflow-x: auto;
+              cursor: grab;
+              -webkit-overflow-scrolling: touch;
+            }
+            .swipe-scroll:active {
+              cursor: grabbing;
+            }
+            .swipe-scroll::-webkit-scrollbar {
+              height: 8px;
+            }
+            .sortable-header {
+              cursor: pointer;
+              user-select: none;
+              transition: background-color 0.2s ease;
+            }
+            .sortable-header:hover {
+              background-color: #f8f9fa;
+            }
+            .sort-icon {
+              margin-left: 5px;
+              opacity: 0.5;
+            }
+            .sort-icon.active {
+              opacity: 1;
+              color: #007bff;
+            }
+          </style>
+          
+          {% if sors %}
+          <div class="table-responsive swipe-scroll" id="sor-table-scroll">
+            <table class="table table-hover align-middle mb-0" style="min-width:1200px;">
+              <thead class="table-light">
+                <tr>
+                  <th class="sortable-header" onclick="sortTable('id')">
+                    #
+                    <i class="fas fa-sort{% if current_sort == 'id' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th class="sortable-header" onclick="sortTable('goods_value')">
+                    Goods Value
+                    <i class="fas fa-sort{% if current_sort == 'goods_value' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th class="sortable-header" onclick="sortTable('source_type')">
+                    Type
+                    <i class="fas fa-sort{% if current_sort == 'source_type' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                    <th>Created By</th>
+                    <th class="sortable-header" onclick="sortTable('created_at')">
+                      Created At
+                      <i class="fas fa-sort{% if current_sort == 'created_at' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                    </th>
+                    <th class="sortable-header" onclick="sortTable('from_location')">
+                      From
+                      <i class="fas fa-sort{% if current_sort == 'from_location' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                    </th>
+                    <th class="sortable-header" onclick="sortTable('to_location')">
+                      To
+                      <i class="fas fa-sort{% if current_sort == 'to_location' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                    </th>
+                  <th class="sortable-header" onclick="sortTable('vehicle')">
+                    Vehicle
+                    <i class="fas fa-sort{% if current_sort == 'vehicle' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th class="sortable-header" onclick="sortTable('rate_per_km')">
+                    Rate/KM
+                    <i class="fas fa-sort{% if current_sort == 'rate_per_km' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th class="sortable-header" onclick="sortTable('distance_km')">
+                    Distance (km)
+                    <i class="fas fa-sort{% if current_sort == 'distance_km' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th class="sortable-header" onclick="sortTable('transport_cost')">
+                    Transport Cost
+                    <i class="fas fa-sort{% if current_sort == 'transport_cost' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th class="sortable-header" onclick="sortTable('transport_cost_percentage')">
+                    Transport % of Goods Value
+                    <i class="fas fa-sort{% if current_sort == 'transport_cost_percentage' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th class="sortable-header" onclick="sortTable('driver')">
+                    Driver
+                    <i class="fas fa-sort{% if current_sort == 'driver' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th class="sortable-header" onclick="sortTable('status')">
+                    Status
+                    <i class="fas fa-sort{% if current_sort == 'status' %}{% if current_order == 'asc' %}-up{% else %}-down{% endif %} active{% endif %} sort-icon"></i>
+                  </th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for sor in sors %}
+                <tr>
+                  <td class="fw-bold">#{{ sor.id }}</td>
+                  <td><span class="badge bg-info bg-opacity-10 text-info fw-semibold"><i class="fas fa-rupee-sign me-1"></i>{{ sor.goods_value }}</span></td>
+                  <td>
+                    <span class="badge {% if sor.source_type == 'outsourced_manual' %}bg-dark{% else %}bg-secondary{% endif %}">{{ sor.get_source_type_display }}</span>
+                  </td>
+                    <td>{% if sor.created_by %}{{ sor.created_by.get_full_name|default:sor.created_by.username }}{% else %}<span class="text-muted">--</span>{% endif %}</td>
+                    <td>{% if sor.created_at %}{{ sor.created_at|date:'d M Y, H:i' }}{% else %}<span class="text-muted">--</span>{% endif %}</td>
+                    <td>{{ sor.from_location }}</td>
+                    <td>{{ sor.to_location }}</td>
+                  <td><i class="fas fa-truck me-1 text-secondary"></i>{% if sor.vehicle %}{{ sor.vehicle }}{% else %}{{ sor.outsourced_vehicle_text|default:'--' }}{% endif %}</td>
+                  <td>{% if sor.vehicle and sor.vehicle.rate_per_km %}{{ sor.vehicle.rate_per_km }}{% elif sor.outsourced_rate_per_km %}{{ sor.outsourced_rate_per_km }}{% else %}<span class="text-muted">--</span>{% endif %}</td>
+                  <td>{% if sor.distance_km %}{{ sor.distance_km|floatformat:2 }}{% else %}<span class="text-muted">--</span>{% endif %}</td>
+                  <td>
+                    {% if sor.transport_cost %}
+                      <span class="text-success fw-semibold">{{ sor.transport_cost|floatformat:2 }}</span>
+                    {% else %}
+                      <span class="text-muted">--</span>
+                    {% endif %}
+                  </td>
+                  
+                  <td>
+                    {% if sor.transport_cost_percentage %}
+                      <span class="fw-semibold text-primary">{{ sor.transport_cost_percentage|floatformat:2 }}%</span>
+                    {% else %}
+                      <span class="text-muted">--</span>
+                    {% endif %}
+                  </td>
+                  <td><i class="fas fa-user me-1 text-secondary"></i>{% if sor.driver %}{{ sor.driver }}{% else %}{{ sor.outsourced_driver_text|default:'--' }}{% endif %}</td>
+                  <td>
+                    <span class="badge 
+                      {% if sor.status == 'pending' %}bg-warning text-dark
+                      {% elif sor.status == 'driver_accepted' %}bg-primary
+                      {% elif sor.status == 'in_progress' %}bg-info text-dark
+                      {% elif sor.status == 'completed' %}bg-success
+                      {% elif sor.status == 'rejected' %}bg-danger
+                      {% endif %}">
+                      {{ sor.get_status_display }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="btn-group" role="group">
+                      <a href="{% url 'sor_view' sor.id %}" class="btn btn-outline-primary btn-sm" title="View">
+                        <i class="fas fa-eye"></i>
+                      </a>
+                      {% if sor.bundle_id %}
+                        <a href="{% url 'sor_bundle_progress' sor.bundle_id %}" class="btn btn-outline-success btn-sm ms-1" title="Trip Bundle">
+                          <i class="fas fa-layer-group"></i>
+                        </a>
+                      {% endif %}
+                      {% if request.user.user_type in 'admin sor_team sor_head manager vehicle_manager' %}
+                        <a href="{% url 'sor_edit' sor.id %}" class="btn btn-outline-warning btn-sm ms-1" title="Edit">
+                          <i class="fas fa-edit"></i>
+                        </a>
+                      {% endif %}
+                      {% if request.user.user_type == 'admin' or request.user.user_type == 'sor_head' %}
+                        <a href="{% url 'sor_delete' sor.id %}" class="btn btn-outline-danger btn-sm ms-1" title="Delete">
+                          <i class="fas fa-trash"></i>
+                        </a>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Pagination -->
+          {% if sors.has_other_pages %}
+          <nav aria-label="SOR pagination" class="mt-4">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="text-muted small">
+                Showing {{ sors.start_index }} to {{ sors.end_index }} of {{ sors.paginator.count }} entries
+              </div>
+              <ul class="pagination pagination-sm mb-0">
+                {% if sors.has_previous %}
+                  <li class="page-item">
+                    <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page=1">
+                      <i class="fas fa-angle-double-left"></i>
+                    </a>
+                  </li>
+                  <li class="page-item">
+                    <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ sors.previous_page_number }}">
+                      <i class="fas fa-angle-left"></i>
+                    </a>
+                  </li>
+                {% endif %}
+                
+                {% for num in sors.paginator.page_range %}
+                  {% if num == sors.number %}
+                    <li class="page-item active">
+                      <span class="page-link">{{ num }}</span>
+                    </li>
+                  {% elif num > sors.number|add:'-3' and num < sors.number|add:'3' %}
+                    <li class="page-item">
+                      <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ num }}">{{ num }}</a>
+                    </li>
+                  {% endif %}
+                {% endfor %}
+                
+                {% if sors.has_next %}
+                  <li class="page-item">
+                    <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ sors.next_page_number }}">
+                      <i class="fas fa-angle-right"></i>
+                    </a>
+                  </li>
+                  <li class="page-item">
+                    <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ sors.paginator.num_pages }}">
+                      <i class="fas fa-angle-double-right"></i>
+                    </a>
+                  </li>
+                {% endif %}
+              </ul>
+            </div>
+          </nav>
+          {% endif %}
+          
+          {% else %}
+          <div class="text-center py-5">
+            <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+            <h5 class="text-muted">No SOR entries found</h5>
+            {% if has_filters %}
+              <p class="text-muted">Try adjusting your filters or <a href="{% url 'sor_list' %}">clear all filters</a></p>
+            {% else %}
+              <p class="text-muted">Create your first SOR entry to get started.</p>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// Enable mouse drag/swipe to scroll horizontally
+const el = document.getElementById('sor-table-scroll');
+let isDown = false;
+let startX;
+let scrollLeft;
+if (el) {
+  el.addEventListener('mousedown', (e) => {
+    isDown = true;
+    el.classList.add('active');
+    startX = e.pageX - el.offsetLeft;
+    scrollLeft = el.scrollLeft;
+  });
+  el.addEventListener('mouseleave', () => {
+    isDown = false;
+    el.classList.remove('active');
+  });
+  el.addEventListener('mouseup', () => {
+    isDown = false;
+    el.classList.remove('active');
+  });
+  el.addEventListener('mousemove', (e) => {
+    if (!isDown) return;
+    e.preventDefault();
+    const x = e.pageX - el.offsetLeft;
+    const walk = (x - startX) * 1.5; //scroll-fast
+    el.scrollLeft = scrollLeft - walk;
+  });
+}
+
+// Sorting function
+function sortTable(column) {
+  const currentSort = '{{ current_sort|default:"created_at" }}';
+  const currentOrder = '{{ current_order|default:"desc" }}';
+  
+  let newOrder = 'asc';
+  if (currentSort === column) {
+    // Toggle order if same column
+    newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+  }
+  
+  // Get current URL parameters
+  const urlParams = new URLSearchParams(window.location.search);
+  urlParams.set('sort', column);
+  urlParams.set('order', newOrder);
+  
+  // Reset to first page when sorting
+  urlParams.delete('page');
+  
+  // Navigate to new URL
+  window.location.href = '?' + urlParams.toString();
+}
+
+// Auto-submit form on filter change (optional)
+document.addEventListener('DOMContentLoaded', function() {
+  const filterSelects = document.querySelectorAll('#filter-form select');
+  const dateInputs = document.querySelectorAll('#filter-form input[type="date"]');
+  
+  // Auto-submit on select change
+  filterSelects.forEach(select => {
+    select.addEventListener('change', function() {
+      // Small delay to prevent rapid submissions
+      setTimeout(() => {
+        document.getElementById('filter-form').submit();
+      }, 100);
+    });
+  });
+  
+  // Auto-submit on date change
+  dateInputs.forEach(input => {
+    input.addEventListener('change', function() {
+      setTimeout(() => {
+        document.getElementById('filter-form').submit();
+      }, 100);
+    });
+  });
+});
+
+// Export function
+function exportData(format) {
+  // Get current URL parameters to preserve filters and sorting
+  const urlParams = new URLSearchParams(window.location.search);
+  urlParams.set('format', format);
+  
+  // Create export URL
+  const exportUrl = '{% url "sor_export" %}?' + urlParams.toString();
+  
+  // Open in new tab for download
+  window.open(exportUrl, '_blank');
+}
+</script>
+{% endblock %}

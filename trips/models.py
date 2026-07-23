@@ -1,0 +1,487 @@
+from django.db import models, transaction
+from django.utils import timezone
+from vehicles.models import Vehicle
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.apps import apps  # Lazy model lookup to avoid circular imports
+# Import GPS tracking models
+from .gps_models import TripLocation, GPSTrackingSession
+
+# Lazy reference to ConsultantRate to prevent circular-import issues.
+# Will be resolved the first time it's actually needed.
+ConsultantRate = None
+
+class Trip(models.Model):
+    """Record of a vehicle trip."""
+    
+    STATUS_CHOICES = (
+        ('ongoing', 'Ongoing'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    )
+    
+    ENTRY_TYPE_CHOICES = (
+        ('real_time', 'Real-time'),
+        ('manual', 'Manual Entry'),
+    )
+    
+    vehicle = models.ForeignKey(
+        Vehicle, 
+        on_delete=models.CASCADE,
+        related_name='trips'
+    )
+    driver = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='trips'
+    )
+    start_time = models.DateTimeField()
+    end_time = models.DateTimeField(null=True, blank=True)
+    start_odometer = models.PositiveIntegerField(help_text="Odometer reading at trip start in km")
+    end_odometer = models.PositiveIntegerField(
+        null=True, 
+        blank=True, 
+        help_text="Odometer reading at trip end in km"
+    )
+    
+    # Location fields
+    origin = models.CharField(
+        max_length=255,
+        help_text="Starting location/address"
+    )
+    destination = models.CharField(
+        max_length=255,
+        blank=True,  # Allow blank for start trip
+        null=True,   # Allow null for start trip
+        help_text="Destination location/address (added when ending trip)"
+    )
+    
+    purpose = models.CharField(max_length=255)
+    notes = models.TextField(blank=True)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='ongoing'
+    )
+    
+    # Add entry type to distinguish between real-time and manual entries
+    entry_type = models.CharField(
+        max_length=20,
+        choices=ENTRY_TYPE_CHOICES,
+        default='real_time',
+        help_text="How this trip was entered into the system"
+    )
+    
+    # Add timestamps for audit trail
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # Soft delete fields
+    is_deleted = models.BooleanField(default=False, help_text="Mark trip as deleted instead of removing from DB")
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='deleted_trips',
+        help_text="User who deleted this trip"
+    )
+    deleted_at = models.DateTimeField(null=True, blank=True, help_text="When the trip was deleted")
+    
+    # GPS Tracking fields
+    gps_tracking_enabled = models.BooleanField(default=False, help_text="Was GPS tracking active for this trip")
+    gps_start_lat = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True, help_text="GPS latitude at trip start")
+    gps_start_lon = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True, help_text="GPS longitude at trip start")
+    gps_end_lat = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True, help_text="GPS latitude at trip end")
+    gps_end_lon = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True, help_text="GPS longitude at trip end")
+
+    # Odometer photo fields for verification
+    start_odometer_image = models.ImageField(
+        upload_to='trips/odometer_images/',
+        null=True,
+        blank=True,
+        help_text="Photo of odometer at trip start for verification"
+    )
+    end_odometer_image = models.ImageField(
+        upload_to='trips/odometer_images/',
+        null=True,
+        blank=True,
+        help_text="Photo of odometer at trip end for verification"
+    )
+
+    # Passenger count for commercial staff buses
+    passenger_count = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Number of passengers (applicable for Commercial Staff Bus)"
+    )
+
+    # ------------------------------------------------------------------
+    # Personal Trip Approval Flow (effective 01-May-2026)
+    # ------------------------------------------------------------------
+    APPROVAL_STATUS_CHOICES = (
+        ('not_required', 'Not Required'),
+        ('pending', 'Pending Approval'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    )
+
+    approval_status = models.CharField(
+        max_length=20,
+        choices=APPROVAL_STATUS_CHOICES,
+        default='not_required',
+        help_text="Approval state for personal-vehicle trips. Only 'not_required' or 'approved' trips count for reimbursement."
+    )
+    approval_manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='trips_to_approve',
+        help_text="Manager (driver.reports_to at submission time) responsible for approving this trip."
+    )
+    approval_submitted_at = models.DateTimeField(null=True, blank=True, help_text="When the trip was submitted for approval (= end_time at end-trip).")
+    approval_action_at = models.DateTimeField(null=True, blank=True, help_text="When the manager approved or rejected the trip.")
+    approval_action_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='trips_actioned',
+        help_text="User who approved or rejected the trip."
+    )
+    approval_remarks = models.TextField(blank=True, help_text="Manager's remarks for the approval decision.")
+
+    @property
+    def is_commercial_staff_bus(self):
+        """Check if the trip's vehicle is a Commercial Staff Bus."""
+        if self.vehicle and self.vehicle.vehicle_type:
+            return self.vehicle.vehicle_type.name.strip().lower() == 'commercial staff bus'
+        return False
+
+    @property
+    def counts_for_reimbursement(self):
+        """A trip counts for reimbursement only when it is not in the approval flow
+        ('not_required') or has been approved by the reporting manager."""
+        return self.approval_status in ('not_required', 'approved')
+
+    @property
+    def is_locked_for_edit(self):
+        """Pending and approved personal trips are locked from driver edits."""
+        return self.approval_status in ('pending', 'approved')
+
+    @property
+    def total_reimbursement(self):
+        """Total reimbursement = vehicle.reimbursement_rate_per_km * distance.
+        Returns 0 when the rate is not set."""
+        rate = getattr(self.vehicle, 'reimbursement_rate_per_km', None)
+        if not rate:
+            return 0
+        try:
+            return float(rate) * self.distance_traveled()
+        except (TypeError, ValueError):
+            return 0
+
+    def soft_delete(self, user=None):
+        """
+        Soft delete the trip, recording who deleted and when.
+        """
+        if not self.is_deleted:
+            self.is_deleted = True
+            self.deleted_by = user
+            self.deleted_at = timezone.now()
+            self.save()
+
+    def delete(self, using=None, keep_parents=False, user=None):
+        """
+        Override delete to perform a soft delete instead of hard delete.
+        """
+        self.soft_delete(user)
+    
+    class Meta:
+        ordering = ['-start_time']
+        indexes = [
+            models.Index(fields=['status', 'start_time']),
+            models.Index(fields=['driver', 'status']),
+            models.Index(fields=['vehicle', 'status']),
+            models.Index(fields=['status', 'end_time']),
+            models.Index(fields=['is_deleted', 'status']),
+            models.Index(fields=['start_time']),
+            models.Index(fields=['end_time']),
+            models.Index(fields=['approval_status']),
+            models.Index(fields=['approval_manager', 'approval_status']),
+            models.Index(
+                fields=['is_deleted', 'approval_status', 'approval_submitted_at', 'end_time'],
+                name='trip_approval_list_idx',
+            ),            # Optimised for the recent-decisions panel (order by approval_action_at)
+            models.Index(
+                fields=['is_deleted', 'approval_status', 'approval_action_at'],
+                name='trip_approval_action_idx',
+            ),            # Optimised for per-driver reimbursement / history views which
+            # filter on driver + is_deleted + status and order/group by start_time.
+            models.Index(
+                fields=['driver', 'is_deleted', 'status', 'start_time'],
+                name='trip_driver_status_time_idx',
+            ),
+        ]
+
+    def __str__(self):
+        destination = self.destination or "TBD"
+        return f"{self.vehicle} driven by {self.driver.get_full_name()} from {self.origin} to {destination} on {self.start_time.date()}"
+    
+    def clean(self):
+        """Validate trip data."""
+        super().clean()
+        
+        # Validate end_odometer if provided
+        if self.end_odometer is not None:
+            if self.end_odometer <= self.start_odometer:
+                raise ValidationError({
+                    'end_odometer': f'End odometer ({self.end_odometer}) must be greater than start odometer ({self.start_odometer})'
+                })
+        
+        # Validate destination is required when trip is completed
+        if self.status == 'completed' and not self.destination:
+            raise ValidationError({
+                'destination': 'Destination is required when completing a trip'
+            })
+    
+    def save(self, *args, **kwargs):
+        """
+        Override save to update related vehicle status and odometer.
+        Handle manual entries differently from real-time trips.
+        Uses select_for_update() to prevent race conditions on vehicle odometer.
+        """
+        # Store the original status to detect changes
+        original_status = None
+        is_new_trip = not self.pk
+        
+        if self.pk:
+            try:
+                original_trip = Trip.objects.get(pk=self.pk)
+                original_status = original_trip.status
+            except Trip.DoesNotExist:
+                pass
+        
+        with transaction.atomic():
+            # Re-fetch vehicle with a row lock to prevent concurrent odometer updates
+            vehicle = Vehicle.objects.select_for_update().get(pk=self.vehicle_id)
+
+            # For a new trip
+            if is_new_trip:
+                # Real-time trips: update vehicle status immediately
+                if self.entry_type == 'real_time' and self.status == 'ongoing':
+                    vehicle.status = 'in_use'
+                    # Update vehicle odometer only if trip start is higher (never go backwards)
+                    if vehicle.current_odometer is None or self.start_odometer > vehicle.current_odometer:
+                        vehicle.current_odometer = self.start_odometer
+                    vehicle.save()
+                
+                # Manual entries: don't change vehicle status unless specified
+                elif self.entry_type == 'manual':
+                    if (self.status == 'completed' and self.end_odometer and 
+                        (not vehicle.current_odometer or self.end_odometer > vehicle.current_odometer)):
+                        latest_trip = Trip.objects.filter(
+                            vehicle=vehicle,
+                            end_odometer__isnull=False
+                        ).exclude(pk=self.pk).order_by('-end_odometer').first()
+                        
+                        if not latest_trip or self.end_odometer >= latest_trip.end_odometer:
+                            vehicle.current_odometer = self.end_odometer
+                            vehicle.save()
+
+            # Keep self.vehicle in sync with the locked instance
+            self.vehicle = vehicle
+
+            # Set end_time when trip is completed (if not already set)
+            if self.status == 'completed' and not self.end_time:
+                self.end_time = timezone.now()
+            
+            # Save the trip FIRST so the DB reflects the new status
+            super().save(*args, **kwargs)
+
+            # AFTER the trip is saved, recalculate vehicle status for
+            # completed/cancelled transitions. recalculate_status() queries
+            # the DB for ongoing trips, so the trip must already be saved.
+            if not is_new_trip and (original_status == 'ongoing' and 
+                self.status in ['completed', 'cancelled']):
+                
+                if self.entry_type == 'real_time':
+                    vehicle.recalculate_status()
+                    
+                    if self.status == 'completed' and self.end_odometer:
+                        if self.end_odometer > (vehicle.current_odometer or 0):
+                            vehicle.current_odometer = self.end_odometer
+                    elif self.status == 'cancelled':
+                        if vehicle.current_odometer is None:
+                            vehicle.current_odometer = self.start_odometer
+                    
+                    if vehicle.current_odometer is None:
+                        vehicle.current_odometer = self.start_odometer
+                    
+                    vehicle.save()
+                
+                elif self.entry_type == 'manual' and self.status == 'completed' and self.end_odometer:
+                    if (not vehicle.current_odometer or 
+                        self.end_odometer > vehicle.current_odometer):
+                        latest_trip = Trip.objects.filter(
+                            vehicle=vehicle,
+                            end_odometer__isnull=False,
+                            status='completed'
+                        ).exclude(pk=self.pk).order_by('-end_odometer').first()
+                        
+                        if not latest_trip or self.end_odometer >= latest_trip.end_odometer:
+                            vehicle.current_odometer = self.end_odometer
+                            vehicle.save()
+    
+    def distance_traveled(self):
+        """Calculate distance traveled during the trip."""
+        if self.end_odometer is not None and self.start_odometer is not None:
+            return max(0, self.end_odometer - self.start_odometer)
+        return 0
+    
+    def trip_cost(self):
+        """Calculate the cost of this trip based on vehicle's rate per km."""
+        distance = self.distance_traveled()
+        if self.vehicle.rate_per_km and distance > 0:
+            return float(self.vehicle.rate_per_km) * distance
+        return 0
+    
+    def get_duration_timedelta(self):
+        """Calculate trip duration as a timedelta object."""
+        if self.end_time and self.start_time:
+            return self.end_time - self.start_time
+        elif self.start_time and self.status == 'ongoing':
+            # For ongoing trips, calculate duration from start_time to now
+            return timezone.now() - self.start_time
+        return None
+    
+    def duration(self):
+        """Return trip duration as a formatted string 'Xh Ym' or 'Ym' or 'Xs'."""
+        delta = self.get_duration_timedelta()
+        if delta:
+            total_seconds = int(delta.total_seconds())
+            days = total_seconds // (24 * 3600)
+            hours = (total_seconds // 3600) % 24
+            minutes = (total_seconds // 60) % 60
+            seconds = total_seconds % 60
+
+            parts = []
+            if days > 0:
+                parts.append(f"{days}d")
+            if hours > 0:
+                parts.append(f"{hours}h")
+            if minutes > 0:
+                parts.append(f"{minutes}m")
+            if not parts and seconds > 0:
+                parts.append(f"{seconds}s")
+            
+            if not parts and total_seconds == 0:
+                return "0m"
+            
+            return " ".join(parts) if parts else None
+        return None
+    
+    def is_active(self):
+        """Check if trip is currently active."""
+        return self.status == 'ongoing'
+    
+    def can_be_ended_by(self, user):
+        """Check if user can end this trip."""
+        # Only the driver or admin/manager can end the trip
+        return (
+            user == self.driver or 
+            hasattr(user, 'user_type') and user.user_type in ['admin', 'manager', 'vehicle_manager']
+        )
+    
+    def get_route_summary(self):
+        """Get a formatted route summary."""
+        destination = self.destination or "TBD"
+        return f"{self.origin} → {destination}"
+    
+    def end_trip(self, destination, end_odometer, notes=None, start_odometer=None):
+        """
+        Safely end a trip with proper validation.
+
+        Locks the row and re-checks status inside the transaction, so two
+        near-simultaneous "End Trip" submissions (e.g. a double-submit from a
+        flaky mobile connection) can't both pass the ongoing check before
+        either one commits.
+
+        Optional ``start_odometer`` allows correcting a wrong start reading
+        at the time of trip closure (verified by the driver via the ODO
+        verification step before submitting).
+        """
+        if not destination or len(destination.strip()) < 3:
+            raise ValidationError("Destination is required to end the trip")
+
+        effective_start = start_odometer if start_odometer is not None else self.start_odometer
+
+        if not end_odometer or end_odometer <= effective_start:
+            raise ValidationError(f"End odometer ({end_odometer}) must be greater than start odometer ({effective_start})")
+
+        with transaction.atomic():
+            locked = Trip.objects.select_for_update().get(pk=self.pk)
+            if locked.status != 'ongoing':
+                raise ValidationError("Can only end ongoing trips")
+
+            if start_odometer is not None and start_odometer != locked.start_odometer:
+                locked.start_odometer = start_odometer
+
+            locked.destination = destination.strip()
+            locked.end_odometer = end_odometer
+            locked.end_time = timezone.now()
+            locked.status = 'completed'
+
+            if notes:
+                locked.notes = notes
+
+            # The save method will handle vehicle updates
+            locked.save()
+
+        # Keep this instance in sync so callers reading `self` afterwards
+        # (view code, email alerts, SOR completion) see the committed values.
+        self.__dict__.update(locked.__dict__)
+    
+    def cancel_trip(self, reason=None):
+        """
+        Cancel an ongoing trip.
+        """
+        if self.status != 'ongoing':
+            raise ValidationError("Can only cancel ongoing trips")
+        
+        self.status = 'cancelled'
+        self.end_time = timezone.now()
+        
+        if reason:
+            self.notes = f"Trip cancelled: {reason}" + (f"\n{self.notes}" if self.notes else "")
+        
+        # The save method will handle vehicle status update
+        self.save()
+
+    # ------------------------------------------------------------------
+    #  Consultant driver payment helpers
+    # ------------------------------------------------------------------
+
+    def get_consultant_rate(self):
+        """
+        Lazily fetch the ConsultantRate model and then return the active rate
+        object for the current driver/vehicle combination (if any).
+        """
+        global ConsultantRate
+        if ConsultantRate is None:
+            # Resolve the model only once; afterwards it's cached in the module.
+            ConsultantRate = apps.get_model('trips', 'ConsultantRate')
+        return ConsultantRate.get_active_rate(self.driver, self.vehicle)
+
+    def consultant_payment(self):
+        """
+        Calculate the consultant driver's payment for this trip
+        based on the active rate and the distance travelled.
+        Returns a float amount in Rupees. If no active rate exists
+        for this driver-vehicle pair, returns 0.
+        """
+        rate_obj = self.get_consultant_rate()
+        if not rate_obj:
+            return 0
+        return rate_obj.calculate_payment(self.distance_traveled())

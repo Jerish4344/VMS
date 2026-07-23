@@ -1,0 +1,456 @@
+# fuel/views.py
+from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
+from django.urls import reverse_lazy
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db.models import Sum, Q, Count
+from django.contrib import messages
+from django.shortcuts import redirect
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_http_methods
+from django.shortcuts import get_object_or_404
+from django.http import JsonResponse
+
+# Import permissions - adjust these imports based on your accounts app structure
+try:
+    from accounts.permissions import (
+        AdminRequiredMixin, ManagerRequiredMixin, VehicleManagerRequiredMixin,
+        FuelViewPermissionMixin, FuelAddPermissionMixin, FuelEditPermissionMixin,
+        FuelDeletePermissionMixin, FuelManagePermissionMixin
+    )
+except ImportError:
+    # Fallback if permissions don't exist
+    class AdminRequiredMixin(LoginRequiredMixin):
+        pass
+    class ManagerRequiredMixin(LoginRequiredMixin):
+        pass
+    class VehicleManagerRequiredMixin(LoginRequiredMixin):
+        pass
+    class FuelViewPermissionMixin(LoginRequiredMixin):
+        pass
+    class FuelAddPermissionMixin(LoginRequiredMixin):
+        pass
+    class FuelEditPermissionMixin(LoginRequiredMixin):
+        pass
+    class FuelDeletePermissionMixin(LoginRequiredMixin):
+        pass
+    class FuelManagePermissionMixin(LoginRequiredMixin):
+        pass
+
+from .models import FuelTransaction, FuelStation
+from vehicles.models import Vehicle
+from .forms import FuelTransactionForm, FuelStationForm
+
+# Custom permission mixins for fuel transactions
+class FuelAdminRequiredMixin(LoginRequiredMixin):
+    """
+    Mixin to ensure only admin users can access the view.
+    """
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')
+        
+        if request.user.user_type != 'admin':
+            messages.error(request, 'You do not have permission to access this feature.')
+            return redirect('fuel_transaction_list')
+        
+        return super().dispatch(request, *args, **kwargs)
+
+class FuelManagerRequiredMixin(LoginRequiredMixin):
+    """
+    Mixin to ensure only admin and manager users can access the view.
+    """
+    def dispatch(self, request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            return redirect('login')
+        
+        if request.user.user_type not in ['admin', 'manager']:
+            messages.error(request, 'You do not have permission to access this feature.')
+            return redirect('fuel_transaction_list')
+        
+        return super().dispatch(request, *args, **kwargs)
+
+class FuelTransactionListView(FuelViewPermissionMixin, ListView):
+    model = FuelTransaction
+    template_name = 'fuel/fuel_transaction_list.html'
+    context_object_name = 'transactions'
+    paginate_by = 20  # Show 20 transactions per page
+    
+    def get_queryset(self):
+        queryset = super().get_queryset().select_related('vehicle', 'driver', 'fuel_station').prefetch_related('vehicle__vehicle_type')
+        
+        # Search functionality - improved with invoice number search
+        search_query = self.request.GET.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                Q(vehicle__license_plate__icontains=search_query) |
+                Q(driver__first_name__icontains=search_query) |
+                Q(driver__last_name__icontains=search_query) |
+                Q(driver__username__icontains=search_query) |
+                Q(fuel_station__name__icontains=search_query) |
+                Q(company_invoice_number__icontains=search_query) |
+                Q(station_invoice_number__icontains=search_query) |
+                Q(notes__icontains=search_query)
+            )
+            
+        # Filter by vehicle
+        vehicle_filter = self.request.GET.get('vehicle', None)
+        if vehicle_filter:
+            try:
+                queryset = queryset.filter(vehicle_id=int(vehicle_filter))
+            except (ValueError, TypeError):
+                pass
+            
+        # Filter by driver
+        driver_filter = self.request.GET.get('driver', None)  
+        if driver_filter:
+            try:
+                queryset = queryset.filter(driver_id=int(driver_filter))
+            except (ValueError, TypeError):
+                pass
+            
+        # Filter by fuel station - Enhanced filtering
+        fuel_station_filter = self.request.GET.get('fuel_station', None) or self.request.GET.get('station', None)
+        if fuel_station_filter:
+            try:
+                queryset = queryset.filter(fuel_station_id=int(fuel_station_filter))
+            except (ValueError, TypeError):
+                pass
+            
+        # Filter by transaction type (fuel vs electric) - Improved logic
+        transaction_type_filter = self.request.GET.get('transaction_type', None)
+        if transaction_type_filter == 'fuel':
+            queryset = queryset.filter(
+                Q(fuel_type__isnull=False) & ~Q(fuel_type='Electric') |
+                Q(quantity__isnull=False, quantity__gt=0)
+            )
+        elif transaction_type_filter == 'electric':
+            queryset = queryset.filter(
+                Q(fuel_type='Electric') |
+                Q(energy_consumed__isnull=False, energy_consumed__gt=0)
+            )
+            
+        # Filter by fuel type
+        fuel_type_filter = self.request.GET.get('fuel_type', None)
+        if fuel_type_filter:
+            queryset = queryset.filter(fuel_type=fuel_type_filter)
+            
+        # Filter by date range
+        start_date = self.request.GET.get('start_date', None)
+        end_date = self.request.GET.get('end_date', None)
+        
+        if start_date:
+            try:
+                queryset = queryset.filter(date__gte=start_date)
+            except ValueError:
+                pass
+        if end_date:
+            try:
+                queryset = queryset.filter(date__lte=end_date)
+            except ValueError:
+                pass
+            
+        # Default ordering - most recent first
+        return queryset.order_by('-date', '-id')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Get all vehicles for filtering
+        # Get company vehicles only for filtering
+        context['vehicles'] = Vehicle.objects.filter(ownership_type='company').select_related('vehicle_type').order_by('license_plate')
+        
+        # Get all fuel types for filtering
+        context['fuel_types'] = FuelTransaction.objects.values_list('fuel_type', flat=True).distinct().exclude(fuel_type__isnull=True).exclude(fuel_type='').order_by('fuel_type')
+        
+        # Get all fuel stations for filtering - with transaction counts
+        fuel_stations = FuelStation.objects.annotate(
+            transaction_count=Count('fueltransaction')
+        ).order_by('name')
+        context['fuel_stations'] = fuel_stations
+        
+        # Get summary data for the current filtered queryset (not just current page)
+        all_filtered_transactions = self.get_queryset()
+        
+        # Calculate aggregates for all filtered data
+        aggregates = all_filtered_transactions.aggregate(
+            total_quantity=Sum('quantity'),
+            total_energy=Sum('energy_consumed'),
+            total_cost=Sum('total_cost'),
+            total_count=Count('id')
+        )
+        
+        summary = {
+            'total_quantity': aggregates['total_quantity'] or 0,
+            'total_energy': aggregates['total_energy'] or 0,
+            'total_cost': aggregates['total_cost'] or 0,
+            'total_count': aggregates['total_count'] or 0,
+        }
+            
+        context['summary'] = summary
+        
+        # Add selected filters to context for display and form persistence
+        context['selected_fuel_station'] = self.request.GET.get('fuel_station', None) or self.request.GET.get('station', None)
+        if context['selected_fuel_station']:
+            try:
+                context['selected_fuel_station_obj'] = FuelStation.objects.get(id=int(context['selected_fuel_station']))
+            except (FuelStation.DoesNotExist, ValueError, TypeError):
+                context['selected_fuel_station_obj'] = None
+        
+        # Add current filter values for template
+        context['current_filters'] = {
+            'search': self.request.GET.get('search', ''),
+            'vehicle': self.request.GET.get('vehicle', ''),
+            'transaction_type': self.request.GET.get('transaction_type', ''),
+            'fuel_type': self.request.GET.get('fuel_type', ''),
+            'fuel_station': self.request.GET.get('fuel_station', ''),
+            'start_date': self.request.GET.get('start_date', ''),
+            'end_date': self.request.GET.get('end_date', ''),
+        }
+        
+        # Add pagination info
+        if context['is_paginated']:
+            context['pagination_info'] = {
+                'showing_start': (context['page_obj'].number - 1) * self.paginate_by + 1,
+                'showing_end': min(context['page_obj'].number * self.paginate_by, context['paginator'].count),
+                'total_count': context['paginator'].count,
+                'current_page': context['page_obj'].number,
+                'total_pages': context['paginator'].num_pages,
+            }
+        
+        return context
+
+class FuelTransactionDetailView(FuelViewPermissionMixin, DetailView):
+    model = FuelTransaction
+    template_name = 'fuel/fuel_transaction_detail.html'
+    context_object_name = 'transaction'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Get previous and next transactions for the same vehicle
+        vehicle = self.object.vehicle
+        previous_transactions = FuelTransaction.objects.filter(
+            vehicle=vehicle,
+            date__lt=self.object.date
+        ).order_by('-date')[:5]
+        
+        next_transactions = FuelTransaction.objects.filter(
+            vehicle=vehicle,
+            date__gt=self.object.date
+        ).order_by('date')[:5]
+        
+        context['previous_transactions'] = previous_transactions
+        context['next_transactions'] = next_transactions
+        
+        # Calculate efficiency if possible
+        if previous_transactions.exists():
+            previous_transaction = previous_transactions.first()
+            distance = self.object.odometer_reading - previous_transaction.odometer_reading
+            if distance > 0:
+                if hasattr(self.object.vehicle, 'is_electric') and self.object.vehicle.is_electric() and self.object.energy_consumed:
+                    # km/kWh for electric vehicles
+                    context['efficiency'] = round(distance / float(self.object.energy_consumed), 2)
+                    context['efficiency_unit'] = 'km/kWh'
+                    context['efficiency_label'] = 'Energy Efficiency'
+                elif not (hasattr(self.object.vehicle, 'is_electric') and self.object.vehicle.is_electric()) and self.object.quantity:
+                    # km/L for fuel vehicles
+                    context['efficiency'] = round(distance / float(self.object.quantity), 2)
+                    context['efficiency_unit'] = 'km/L'
+                    context['efficiency_label'] = 'Fuel Efficiency'
+                
+                context['distance_since_last'] = distance
+        
+        return context
+
+class FuelTransactionCreateView(FuelAddPermissionMixin, CreateView):
+    model = FuelTransaction
+    form_class = FuelTransactionForm
+    template_name = 'fuel/fuel_transaction_form.html'
+    success_url = reverse_lazy('fuel_transaction_list')
+    
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+    
+    def form_valid(self, form):
+        try:
+            # Set the driver to the current user if they're a driver
+            if hasattr(self.request.user, 'user_type') and self.request.user.user_type == 'driver':
+                form.instance.driver = self.request.user
+                
+            # Update vehicle's current odometer if this is newer
+            vehicle = form.instance.vehicle
+            if vehicle and hasattr(vehicle, 'current_odometer') and form.instance.odometer_reading > vehicle.current_odometer:
+                vehicle.current_odometer = form.instance.odometer_reading
+                vehicle.save()
+            
+            response = super().form_valid(form)
+            
+            # Success message based on vehicle type
+            if hasattr(form.instance.vehicle, 'is_electric') and form.instance.vehicle.is_electric():
+                messages.success(self.request, 'Charging session added successfully.')
+            else:
+                messages.success(self.request, 'Fuel transaction added successfully.')
+            
+            return response
+            
+        except Exception as e:
+            print(f"Error in form_valid: {e}")
+            messages.error(self.request, f'Error saving transaction: {str(e)}')
+            return self.form_invalid(form)
+
+    def form_invalid(self, form):
+        print("Form is invalid!")
+        print("Form errors:", form.errors)
+        print("Non-field errors:", form.non_field_errors)
+        
+        # Add error messages for user
+        for field, errors in form.errors.items():
+            for error in errors:
+                messages.error(self.request, f"{field}: {error}")
+        
+        return super().form_invalid(form)
+
+class FuelTransactionUpdateView(FuelEditPermissionMixin, UpdateView):
+    model = FuelTransaction
+    form_class = FuelTransactionForm
+    template_name = 'fuel/fuel_transaction_form.html'
+    
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs['user'] = self.request.user
+        return kwargs
+    
+    def get_success_url(self):
+        return reverse_lazy('fuel_transaction_detail', kwargs={'pk': self.object.pk})
+    
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        
+        # Success message based on vehicle type
+        if hasattr(form.instance.vehicle, 'is_electric') and form.instance.vehicle.is_electric():
+            messages.success(self.request, 'Charging session updated successfully.')
+        else:
+            messages.success(self.request, 'Fuel transaction updated successfully.')
+            
+        return response
+
+class FuelTransactionDeleteView(FuelDeletePermissionMixin, DeleteView):
+    model = FuelTransaction
+    template_name = 'fuel/fuel_transaction_confirm_delete.html'
+    success_url = reverse_lazy('fuel_transaction_list')
+    
+    def delete(self, request, *args, **kwargs):
+        transaction = self.get_object()
+        transaction_type = "Charging session" if (hasattr(transaction.vehicle, 'is_electric') and transaction.vehicle.is_electric()) else "Fuel transaction"
+        
+        response = super().delete(request, *args, **kwargs)
+        messages.success(self.request, f'{transaction_type} deleted successfully.')
+        return response
+
+# Function-based view for AJAX delete (similar to trip delete)
+@login_required
+@require_http_methods(["DELETE", "POST"])
+def fuel_transaction_delete(request, pk):
+    """Delete a fuel transaction"""
+    transaction = get_object_or_404(FuelTransaction, pk=pk)
+    
+    # Check permissions - only admins can delete fuel transactions
+    if request.user.user_type != 'admin':
+        messages.error(request, "You don't have permission to delete this transaction.")
+        return redirect('fuel_transaction_detail', pk=transaction.pk)
+    
+    # Store transaction info for the success message before deletion
+    transaction_type = "Charging session" if (hasattr(transaction.vehicle, 'is_electric') and transaction.vehicle.is_electric()) else "Fuel transaction"
+    transaction_info = f"{transaction_type} for {transaction.vehicle.license_plate} on {transaction.date}"
+    
+    if request.method == 'DELETE' or request.method == 'POST':
+        try:
+            # Delete the transaction
+            transaction.delete()
+            
+            # Handle different response types
+            if request.headers.get('Content-Type') == 'application/json' or request.META.get('HTTP_ACCEPT', '').startswith('application/json'):
+                return JsonResponse({'status': 'success', 'message': f'{transaction_info} deleted successfully!'})
+            else:
+                messages.success(request, f'{transaction_info} deleted successfully!')
+                return redirect('fuel_transaction_list')
+                
+        except Exception as e:
+            error_msg = f'Error deleting transaction: {str(e)}'
+            if request.headers.get('Content-Type') == 'application/json' or request.META.get('HTTP_ACCEPT', '').startswith('application/json'):
+                return JsonResponse({'status': 'error', 'message': error_msg})
+            else:
+                messages.error(request, error_msg)
+                return redirect('fuel_transaction_detail', pk=pk)
+    
+    # If GET request, redirect to transaction detail
+    return redirect('fuel_transaction_detail', pk=pk)
+
+# Fuel Station Views
+class FuelStationListView(LoginRequiredMixin, ListView):
+    model = FuelStation
+    template_name = 'fuel/fuel_station_list.html'
+    context_object_name = 'stations'
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Add search functionality
+        search_query = self.request.GET.get('search', None)
+        if search_query:
+            queryset = queryset.filter(
+                Q(name__icontains=search_query) |
+                Q(address__icontains=search_query)
+            )
+        
+        return queryset.order_by('name')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Annotate stations with transaction count in a single query instead of N+1
+        from django.db.models import Count
+        context['stations'] = context['stations'].annotate(
+            transaction_count=Count('fueltransaction')
+        )
+            
+        return context
+
+class FuelStationCreateView(FuelManagePermissionMixin, CreateView):
+    model = FuelStation
+    form_class = FuelStationForm
+    template_name = 'fuel/fuel_station_form.html'
+    success_url = reverse_lazy('fuel_station_list')
+    
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        station_type = form.instance.get_station_type_display()
+        messages.success(self.request, f'{station_type} added successfully.')
+        return response
+
+class FuelStationUpdateView(FuelManagePermissionMixin, UpdateView):
+    model = FuelStation
+    form_class = FuelStationForm
+    template_name = 'fuel/fuel_station_form.html'
+    success_url = reverse_lazy('fuel_station_list')
+    
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        station_type = form.instance.get_station_type_display()
+        messages.success(self.request, f'{station_type} updated successfully.')
+        return response
+
+class FuelStationDeleteView(FuelDeletePermissionMixin, DeleteView):
+    model = FuelStation
+    template_name = 'fuel/fuel_station_confirm_delete.html'
+    success_url = reverse_lazy('fuel_station_list')
+    
+    def delete(self, request, *args, **kwargs):
+        station = self.get_object()
+        station_type = station.get_station_type_display()
+        
+        response = super().delete(request, *args, **kwargs)
+        messages.success(self.request, f'{station_type} deleted successfully.')
+        return response

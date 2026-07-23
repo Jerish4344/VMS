@@ -1,0 +1,170 @@
+# fuel/models.py
+from django.db import models
+from vehicles.models import Vehicle
+from django.conf import settings
+from django.core.exceptions import ValidationError
+
+class FuelStation(models.Model):
+    name = models.CharField(max_length=100)
+    address = models.TextField()
+    latitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=10, decimal_places=7, null=True, blank=True)
+    
+    # Add station type to differentiate fuel stations from charging stations
+    STATION_TYPE_CHOICES = [
+        ('fuel', 'Fuel Station'),
+        ('charging', 'Charging Station'),
+        ('both', 'Fuel & Charging Station'),
+    ]
+    station_type = models.CharField(
+        max_length=20,
+        choices=STATION_TYPE_CHOICES,
+        default='fuel'
+    )
+    
+    def __str__(self):
+        return self.name
+
+class FuelTransaction(models.Model):
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='fuel_transactions')
+    driver = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    fuel_station = models.ForeignKey(FuelStation, on_delete=models.SET_NULL, null=True, blank=True)
+    date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True, help_text="Date and time when this entry was created in the system")
+
+    # For regular fuel vehicles
+    fuel_type = models.CharField(max_length=50, blank=True)
+    quantity = models.DecimalField(
+        max_digits=6, 
+        decimal_places=2, 
+        null=True, 
+        blank=True,
+        help_text="Fuel quantity in liters (for fuel vehicles)"
+    )
+    cost_per_liter = models.DecimalField(
+        max_digits=6, 
+        decimal_places=2, 
+        null=True,
+        blank=True
+    )
+    
+    # For electric vehicles
+    energy_consumed = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Energy consumed in kWh (for electric vehicles)"
+    )
+    cost_per_kwh = models.DecimalField(
+        max_digits=6,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text="Cost per kWh (for electric vehicles)"
+    )
+    charging_duration_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="Charging duration in minutes (for electric vehicles)"
+    )
+    
+    # Invoice/Finance Fields for Admin/Finance Team
+    company_invoice_number = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Internal company invoice number for finance tracking"
+    )
+    station_invoice_number = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        help_text="Invoice/receipt number from the fuel station"
+    )
+    
+    # Common fields
+    total_cost = models.DecimalField(max_digits=10, decimal_places=2)
+    odometer_reading = models.PositiveIntegerField(help_text="Current odometer reading in km")
+    receipt_image = models.ImageField(upload_to='fuel_receipts/', null=True, blank=True)
+    notes = models.TextField(blank=True)
+    
+    class Meta:
+        indexes = [
+            models.Index(fields=['date']),
+            models.Index(fields=['vehicle', 'date']),
+            models.Index(fields=['driver', 'date']),
+            models.Index(fields=['created_at']),
+            models.Index(fields=['fuel_type', 'date']),
+            models.Index(fields=['fuel_station', 'date']),
+            models.Index(fields=['date', 'fuel_type', 'fuel_station']),
+            models.Index(fields=['vehicle', 'driver', 'date']),
+        ]
+    
+    def __str__(self):
+        if self.is_electric_transaction():
+            return f"Charging for {self.vehicle} on {self.date}"
+        else:
+            return f"Fuel for {self.vehicle} on {self.date}"
+    
+    def is_electric_transaction(self):
+        """Check if this is an electric vehicle transaction."""
+        return (self.vehicle.is_electric() if hasattr(self.vehicle, 'is_electric') 
+                else self.fuel_type == 'Electric')
+    
+    def get_quantity_display(self):
+        """Get appropriate quantity display based on vehicle type."""
+        if self.is_electric_transaction():
+            return f"{self.energy_consumed} kWh" if self.energy_consumed else "N/A"
+        else:
+            return f"{self.quantity} L" if self.quantity else "N/A"
+    
+    def get_unit_cost_display(self):
+        """Get appropriate unit cost display based on vehicle type."""
+        if self.is_electric_transaction():
+            return f"₹{self.cost_per_kwh}/kWh" if self.cost_per_kwh else "N/A"
+        else:
+            return f"₹{self.cost_per_liter}/L" if self.cost_per_liter else "N/A"
+    
+    def clean(self):
+        super().clean()
+        has_fuel = bool(self.quantity or self.cost_per_liter)
+        has_electric = bool(self.energy_consumed or self.cost_per_kwh)
+        if has_fuel and has_electric:
+            raise ValidationError(
+                'A transaction cannot have both fuel (quantity/cost_per_liter) '
+                'and electric (energy_consumed/cost_per_kwh) fields set.'
+            )
+
+    def save(self, *args, **kwargs):
+        # Auto-calculate total cost if not provided, or if it's gone stale.
+        # total_cost is also an intentionally user-editable field (e.g. to
+        # account for taxes/rounding on the actual receipt), so this only
+        # recomputes when the underlying inputs changed without the user
+        # also explicitly updating total_cost — an explicit override wins.
+        previous = None
+        if self.pk:
+            previous = FuelTransaction.objects.filter(pk=self.pk).values(
+                'quantity', 'cost_per_liter', 'energy_consumed', 'cost_per_kwh', 'total_cost'
+            ).first()
+
+        if self.is_electric_transaction():
+            rate_fields = (self.energy_consumed, self.cost_per_kwh)
+            prev_rate_fields = (previous['energy_consumed'], previous['cost_per_kwh']) if previous else None
+            computed = self.energy_consumed * self.cost_per_kwh if self.energy_consumed and self.cost_per_kwh else None
+        else:
+            rate_fields = (self.quantity, self.cost_per_liter)
+            prev_rate_fields = (previous['quantity'], previous['cost_per_liter']) if previous else None
+            computed = self.quantity * self.cost_per_liter if self.quantity and self.cost_per_liter else None
+
+        if computed is not None:
+            rate_fields_changed = previous is None or rate_fields != prev_rate_fields
+            total_cost_untouched = previous is not None and previous['total_cost'] == self.total_cost
+            if not self.total_cost or self.total_cost <= 0 or (rate_fields_changed and total_cost_untouched):
+                self.total_cost = computed
+
+        # Ensure fuel_type is set for electric vehicles
+        if self.is_electric_transaction() and not self.fuel_type:
+            self.fuel_type = 'Electric'
+
+        super().save(*args, **kwargs)
